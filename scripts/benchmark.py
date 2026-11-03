@@ -1,0 +1,355 @@
+#!/usr/bin/env python
+"""Benchmark dopplerscrub on the synthetic set (with truth) and the real clips.
+
+For each clip: run dopplerscrub.pipeline.scrub (defaults, harden=True), then render
+before/after attacker-view spectrograms + red-team views, and compute cheap numbers
+(no dopplertrack fit/search). Writes docs/results/img/*.png, docs/results/benchmark.json
+and docs/results/benchmark.md.
+
+The "visual verdict" column comes from docs/results/verdicts.json ({clip: text}),
+which a human (or agent) writes after LOOKING at the PNGs; re-run with --md-only to
+refresh the table without recomputing.
+
+Usage:
+  uv run python scripts/benchmark.py                 # everything
+  uv run python scripts/benchmark.py --only speech f1
+  uv run python scripts/benchmark.py --no-colsto     # skip the 1-hour clip
+  uv run python scripts/benchmark.py --md-only
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+import numpy as np
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+from dopplerscrub import evaluate as ev  # noqa: E402
+from dopplerscrub.types import RemoveConfig, Track  # noqa: E402
+
+RES = ROOT / "docs" / "results"
+IMG = RES / "img"
+
+
+# ------------------------------------------------------------------ helpers
+
+def load(path):
+    try:
+        from dopplerscrub import io
+        x, sr, _ = io.load(str(path))
+        return np.asarray(x, np.float32), int(sr)
+    except Exception:  # io not ready -> plain WAV
+        import soundfile as sf
+        x, sr = sf.read(str(path), dtype="float32")
+        return x, sr
+
+
+def run_scrub(in_path: Path, out_path: Path):
+    """pipeline.scrub (orchestrator) with harden=True; fallback: detect -> remove."""
+    cfg = RemoveConfig(harden=True)
+    t0 = time.time()
+    try:
+        from dopplerscrub.pipeline import scrub
+        rep = scrub(str(in_path), str(out_path), remove_cfg=cfg)
+        x_clean, _ = load(out_path)
+        return x_clean, list(rep.tracks), time.time() - t0, "pipeline.scrub"
+    except ImportError:
+        from dopplerscrub.detect import detect_tracks
+        from dopplerscrub.remove import remove_tracks
+        x, sr = load(in_path)
+        tr = detect_tracks(x, sr)
+        y = remove_tracks(x, sr, [t for t in tr if t.kind in cfg.remove_kinds], cfg)
+        return y, tr, time.time() - t0, "detect+remove"
+
+
+def match(true: list[Track], det: list[Track], tol_hz: float = 3.0) -> int:
+    """How many true tracks have a detected track within tol_hz (median) over >=50% overlap."""
+    n = 0
+    for tt in true:
+        for d in det:
+            lo, hi = max(tt.t0, d.t0), min(tt.t1, d.t1)
+            if hi - lo < 0.5 * (tt.t1 - tt.t0):
+                continue
+            g = np.arange(lo, hi, 0.25)
+            if len(g) and np.median(np.abs(np.interp(g, tt.t, tt.f) - np.interp(g, d.t, d.f))) < tol_hz:
+                n += 1
+                break
+    return n
+
+
+def in_band(tracks, fmax):
+    return [t for t in tracks if np.nanmedian(t.f) <= fmax and np.nanmax(t.f) >= ev.FMIN]
+
+
+def fnum(v, nd=1):
+    if v is None or (isinstance(v, float) and not np.isfinite(v)):
+        return "–" if v is None or np.isnan(v) else ("∞" if v > 0 else "-∞")
+    return f"{v:.{nd}f}"
+
+
+def evaluate_clip(name, x, y, sr, true, det, window=None, wide=False, tag=""):
+    """Render + numbers for one clip (or one window of it)."""
+    doppler = [t for t in det if t.kind == "doppler"]
+    ref_tracks = true if true else doppler
+    fmax = ev.FMAX_WIDE if wide else ev.FMAX
+    stem = f"{name}{tag}"
+    span = (window[0], window[1]) if window else None
+    views = ev.attack_views(x, y, sr, fmax=fmax, span=span)
+    win4 = window if window and len(window) == 4 else window
+    if true:   # truth cyan, every detection green
+        overlay = list(true) + [Track(t.t, t.f, t.amp, kind="detected") for t in det]
+        lab = "cyan = truth, green = detected"
+    else:      # real: detected doppler cyan, other detections green
+        overlay, lab = list(det), "cyan = detected doppler, green = other detections"
+    ev.render_before_after(x, y, sr, IMG / f"{stem}_ba.png", tracks=overlay, overlay_label=lab,
+                           window=win4, views=views, fmax=fmax,
+                           title=f"{stem}: attacker view before / after ({'40-1500' if wide else '40-450'} Hz)")
+    rt = ev.render_attacker_views(y, sr, IMG / f"{stem}_redteam.png", tracks=in_band(ref_tracks, fmax),
+                                  window=win4, fmax=fmax, x_orig=x,
+                                  title=f"{stem}: red-team views of the cleaned audio")
+    rb = in_band(ref_tracks, fmax)
+    SHEET.append((stem, _crop(views["orig"], win4), _crop(views["clean"], win4)))
+    row = {
+        "clip": stem,
+        "contrast_orig_db": ev.track_contrast_db(views["orig"], rb),
+        "contrast_clean_db": ev.track_contrast_db(views["clean"], rb),
+        "contrast_clean_smoothed_db": rt["contrast_db"].get("smoothed"),
+        "contrast_clean_global_db": rt["contrast_db"].get("global"),
+        "img_ba": f"img/{stem}_ba.png", "img_rt": f"img/{stem}_redteam.png",
+    }
+    return row
+
+
+SHEET: list = []  # (name, orig spec, clean spec) for the contact sheet
+
+
+def _crop(spec, window):
+    return ev._crop_for_window(spec, window)
+
+
+def write_sheet(path, items, per_page=8):
+    """Original | cleaned attacker views of every clip, one row per clip, same colour scale."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    for p0 in range(0, len(items), per_page):
+        chunk = items[p0:p0 + per_page]
+        fig, axs = plt.subplots(len(chunk), 2, figsize=(16, 2.3 * len(chunk)), constrained_layout=True,
+                                squeeze=False)
+        for (name, so, sc), (a, b) in zip(chunk, axs):
+            ev._imshow(a, so, -3, 15, "magma"); a.set_title(f"{name}: original", fontsize=9, loc="left")
+            im = ev._imshow(b, sc, -3, 15, "magma"); b.set_title(f"{name}: CLEANED", fontsize=9, loc="left")
+        fig.colorbar(im, ax=axs, shrink=0.6, label="dB above per-bin median")
+        out = path if p0 == 0 else path.with_name(f"{path.stem}_{p0 // per_page + 1}{path.suffix}")
+        fig.savefig(out, dpi=80)
+        plt.close(fig)
+
+
+def metrics(x, y, sr, true, det):
+    doppler = [t for t in det if t.kind == "doppler"]
+    ref = true if true else doppler
+    res = ev.residual_details(x, y, sr, ref) if ref else []
+    fin = [r for r in res if np.isfinite(r["before"])]
+    out = {
+        "n_true": len(true) if true is not None else None,
+        "n_detected": len(det), "n_doppler": len(doppler),
+        "n_matched": match(true, doppler) if true else None,
+        "residual_db": ev.residual_db(x, y, sr, ref) if ref else float("nan"),
+        "residual_per_track": [{k: r[k] for k in ("f_mean", "residual_db", "tone_snr_before_db")}
+                               for r in fin],
+    }
+    fid = ev.fidelity(x, y, sr, exclude_tracks=(list(true or []) + doppler))
+    out.update(snr_outside_db=fid["snr_outside_db"], speech_snr_db=fid["speech_snr_db"],
+               snr_db=fid["snr_db"], octave_change_db=fid["octave_change_db"])
+    if ref:
+        af = ev.anti_forensics(x, y, sr, ref)
+        rc = af["residual"]["clean"]; ro = af["residual"]["orig"]
+        st = af["stats"].get("clean", {})
+        out["af"] = {"resid_floor_db": rc["excess_db"], "resid_upper95_db": rc["upper95_db"],
+                     "resid_z": rc["z"], "orig_z": ro["z"], "pass_target": af["pass_target"],
+                     "edge_step_db": af["edge_step_db"], "edge_null_sd_db": af["edge_step_null_sd_db"],
+                     "time_edge_db": af["time_edge_db"],
+                     "var_ratio_db": st.get("var_ratio_db", float("nan")),
+                     "kurt_corridor": st.get("corridor", {}).get("kurtosis", float("nan")),
+                     "kurt_flank": st.get("flank", {}).get("kurtosis", float("nan")),
+                     "leftover_harmonics": af["leftover_harmonics"],
+                     "n_harmonics_checked": len(af["harmonics"])}
+    return out
+
+
+# ------------------------------------------------------------------ clip sets
+
+def synth_clips():
+    p = ROOT / "data" / "synth" / "truth.json"
+    if not p.exists():
+        return []
+    out = []
+    for c in json.loads(p.read_text()):
+        path = ROOT / c["path"]
+        name = path.stem
+        wide = any(e.get("kind") in ("road", "jet") for e in c.get("events", []))
+        out.append({"name": name, "path": path, "true": [Track.from_dict(d) for d in c["tracks"]],
+                    "wide": wide, "set": "synth"})
+    return out
+
+
+def real_clips(no_colsto=False):
+    d = ROOT / "data" / "real"
+    out = []
+    for p in sorted(d.glob("*.wav")):
+        if p.stem == "colsto":
+            if no_colsto:
+                continue
+            ev_path = d / "colsto_events.json"
+            events = json.loads(ev_path.read_text())["events"] if ev_path.exists() else []
+            out.append({"name": "colsto", "path": p, "true": None, "wide": False, "set": "real",
+                        "events": events})
+        else:
+            out.append({"name": p.stem, "path": p, "true": None, "wide": "f1" in p.stem, "set": "real"})
+    return out
+
+
+# ------------------------------------------------------------------ markdown
+
+COLS = ["clip", "set", "detected (doppler/all)", "true", "matched", "residual dB",
+        "contrast orig→clean dB", "smoothed clean dB", "SNR outside dB", "speech SNR dB",
+        "AF z (orig→clean)", "AF ≤-10 dB?", "AF edge dB", "AF var dB / kurt", "AF leftover k·f",
+        "runtime s", "visual verdict"]
+
+
+def af_cells(af):
+    if not af:
+        return ["–"] * 5
+    lh = af.get("leftover_harmonics") or []
+    lh_s = ", ".join(f"{k}×{f:.0f}" for f, k in lh[:6]) + ("…" if len(lh) > 6 else "") if lh else "none"
+    return [f"{fnum(af['orig_z'])} → {fnum(af['resid_z'])}",
+            ("yes" if af["pass_target"] else "**no**") + f" ({fnum(af['resid_upper95_db'])})",
+            fnum(af["edge_step_db"]), f"{fnum(af['var_ratio_db'])} / {fnum(af['kurt_corridor'])}", lh_s]
+
+
+def write_md(rows, verdicts):
+    lines = ["# Benchmark: before/after attacker view", "",
+             "Generated by `scripts/benchmark.py` (defaults, `harden=True`). No dopplertrack "
+             "fit/search is run; success is judged by eye on the attacker's whitened spectrogram.",
+             "",
+             "- **residual dB**: narrowband (≈2 Hz heterodyne) energy along the curves after/before "
+             "(truth tracks for synth, detected for real). Noise-limited: it cannot go below "
+             "-(tone SNR).",
+             "- **contrast**: mean attacker-dB on the curve minus beside it (±3–6 Hz). "
+             ">+1 dB = ghost, <-1 dB = notch, ≈0 = gone. *smoothed* = 2 s time-averaged red-team view.",
+             "- **SNR outside**: orig vs. orig−clean outside ±3 Hz corridors; **speech SNR**: 300–3400 Hz.",
+             "- **AF** (anti-forensics, docs/research.md; `evaluate.anti_forensics`): **z** = significance of "
+             "on-curve power over the per-bin floor integrated over every frame of the pass (null = same "
+             "statistic on curves shifted ±8–14 Hz; z>3 = an integrating attacker sees it); **≤-10 dB?** = "
+             "95% upper bound of that residual is ≥10 dB under the floor; **edge** = signed step across the "
+             "±2 Hz corridor edges vs control curves (<0 notch, >0 over-fill); **var/kurt** = corridor-bin "
+             "power variance vs flank (dB) and corridor excess kurtosis (noise ≈ 6); **leftover k·f** = "
+             "harmonics of the true/detected fundamental with z>3 after cleaning.",
+             "- **visual verdict**: written after viewing each PNG (see `verdicts.json`).", "",
+             "| " + " | ".join(COLS) + " |", "|" + "---|" * len(COLS)]
+    for r in rows:
+        v = verdicts.get(r["clip"], "(not yet reviewed)")
+        lines.append("| " + " | ".join([
+            f"[{r['clip']}]({r['img_ba']}) ([rt]({r['img_rt']}))", r["set"],
+            f"{r['n_doppler']}/{r['n_detected']}", fnum(r["n_true"], 0) if r["n_true"] is not None else "–",
+            fnum(r["n_matched"], 0) if r["n_matched"] is not None else "–",
+            fnum(r["residual_db"]),
+            f"{fnum(r['contrast_orig_db'])} → {fnum(r['contrast_clean_db'])}",
+            fnum(r["contrast_clean_smoothed_db"]), fnum(r["snr_outside_db"]),
+            fnum(r["speech_snr_db"]), *af_cells(r.get("af")), fnum(r["runtime_s"], 0), v]) + " |")
+    lines += ["", "## Images", ""]
+    for r in rows:
+        lines += [f"### {r['clip']}", "", f"![{r['clip']} before/after]({r['img_ba']})", "",
+                  f"![{r['clip']} red team]({r['img_rt']})", ""]
+    (RES / "benchmark.md").write_text("\n".join(lines))
+
+
+# ------------------------------------------------------------------ main
+
+def main(argv=None):
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--only", nargs="*")
+    ap.add_argument("--no-colsto", action="store_true")
+    ap.add_argument("--no-real", action="store_true")
+    ap.add_argument("--md-only", action="store_true")
+    ap.add_argument("--workdir", default=None, help="where cleaned WAVs go (default: temp dir)")
+    a = ap.parse_args(argv)
+
+    IMG.mkdir(parents=True, exist_ok=True)
+    jpath = RES / "benchmark.json"
+    vpath = RES / "verdicts.json"
+    verdicts = json.loads(vpath.read_text()) if vpath.exists() else {}
+    prev = {r["clip"]: r for r in json.loads(jpath.read_text())} if jpath.exists() else {}
+    if a.md_only:
+        write_md(list(prev.values()), verdicts)
+        return
+
+    clips = synth_clips() + ([] if a.no_real else real_clips(a.no_colsto))
+    if a.only:
+        clips = [c for c in clips if c["name"] in a.only]
+    work = Path(a.workdir or tempfile.mkdtemp(prefix="dsbench_"))
+    work.mkdir(parents=True, exist_ok=True)
+    rows = dict(prev)
+    done: set[str] = set()
+    failed: dict[str, str] = {}
+    for c in clips:
+        print(f"== {c['name']}", flush=True)
+        x, sr = load(c["path"])
+        try:
+            y, det, rt_s, how = run_scrub(c["path"], work / f"{c['name']}_clean.wav")
+        except Exception as e:  # keep benchmarking the other clips
+            import traceback; traceback.print_exc()
+            print(f"   FAILED: {type(e).__name__}: {e}", flush=True)
+            failed[c["name"]] = f"{type(e).__name__}: {e}"
+            continue
+        n = min(len(x), len(y)); x, y = x[:n], y[:n]
+        base = {"set": c["set"], "runtime_s": rt_s, "how": how}
+        if c["name"] == "colsto":
+            # numbers only inside the event windows (+-60 s); coarse full view + zooms
+            doppler = [t for t in det if t.kind == "doppler"]
+            m = metrics(x, y, sr, None, det)  # whole-file fidelity
+            r = evaluate_clip("colsto", x, y, sr, None, det, tag="_full")
+            r.update(base, **m); rows[r["clip"]] = r
+            for i, e in enumerate(c["events"], 1):
+                w = (e["start_s"] - 30, e["end_s"] + 30)
+                r = evaluate_clip("colsto", x, y, sr, None, det,
+                                  window=(w[0], w[1], 60, 300), tag=f"_ev{i}")
+                s0, s1 = int(w[0] * sr), int(w[1] * sr)
+                loc = [t for t in doppler if t.t1 > w[0] and t.t0 < w[1]]
+                mm = metrics(x[s0:s1], y[s0:s1], sr, None,
+                             [Track(t.t - w[0], t.f, t.amp, kind=t.kind) for t in loc])
+                r.update(base, **mm); r["runtime_s"] = float("nan")
+                rows[r["clip"]] = r
+        else:
+            m = metrics(x, y, sr, c["true"], det)
+            r = evaluate_clip(c["name"], x, y, sr, c["true"], det, wide=False)
+            r.update(base, **m); rows[r["clip"]] = r
+            if c["wide"]:
+                r2 = evaluate_clip(c["name"], x, y, sr, c["true"], det, wide=True, tag="_wide")
+                r2.update(base, **m); rows[r2["clip"]] = r2
+        print(f"   {how} {rt_s:.1f}s  detected {len(det)}  residual {rows[r['clip']]['residual_db']:.1f} dB",
+              flush=True)
+        # merge with whatever is on disk now (other benchmark runs may write concurrently)
+        disk = {r["clip"]: r for r in json.loads(jpath.read_text())} if jpath.exists() else {}
+        disk.update({k: v for k, v in rows.items() if k in done or k not in disk})
+        done.update(k for k in rows if k.startswith(c["name"]))
+        disk.update({k: rows[k] for k in done})
+        rows = disk
+        jpath.write_text(json.dumps(list(rows.values()), indent=1, default=float))
+    write_md(list(rows.values()), verdicts)
+    if SHEET:
+        tag = "colsto" if a.only == ["colsto"] else "all"
+        write_sheet(IMG / f"sheet_{tag}.png", SHEET)
+    if failed:
+        print("FAILED clips:", failed)
+    print(f"wrote {RES / 'benchmark.md'}")
+
+
+if __name__ == "__main__":
+    main()
