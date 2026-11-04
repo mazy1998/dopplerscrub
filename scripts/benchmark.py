@@ -284,6 +284,19 @@ def heldout_clips(which: str = "heldout"):
     return out
 
 
+# Research scope: fixed-wing airplanes (propeller and jet). Rotorcraft, drones and road
+# vehicles stay listed but are excluded from headline medians/tallies. Synthetic null
+# controls (speech, music, long_hum60, stereo) stay in scope: they test do-no-harm.
+OUT_OF_SCOPE = {"helicopter", "helicopter_wide", "air_helicopter_fast", "air_military_helicopters",
+                "ho_drone", "ho_city_helicopter", "ho_motorcycle"}
+
+
+def in_scope(clip: str) -> bool:
+    """True for fixed-wing clips (and null controls); f1* (cars) and rotorcraft are out."""
+    base = clip.split("_ev")[0] if clip.startswith("colsto") else clip
+    return not (base in OUT_OF_SCOPE or base.startswith("f1"))
+
+
 def clip_split(c) -> str:
     """'dev' = everything used during development/tuning (synth, data/real, airshow, colsto);
     'heldout' = data/real/heldout only; 'heldout2' = data/real/heldout2 only."""
@@ -292,7 +305,7 @@ def clip_split(c) -> str:
 
 # ------------------------------------------------------------------ markdown
 
-COLS = ["clip", "split", "set", "detected (doppler/all)", "true", "matched", "residual dB",
+COLS = ["clip", "split", "set", "scope", "detected (doppler/all)", "true", "matched", "residual dB",
         "contrast orig→clean dB", "smoothed clean dB", "SNR outside dB", "speech SNR dB",
         "event-box p99 dB (orig→clean)", "box-free ridges z>3: orig → still (new)", "persistent cells % (orig→clean)", "AF z (orig→clean)", "AF ≤-10 dB?", "AF edge dB", "AF var dB / kurt", "AF leftover k·f",
         "runtime s", "visual verdict"]
@@ -314,6 +327,20 @@ def bf_cells(b):
         return ["–", "–"]
     return [f"{b['n_ridges_orig_z3']} → {b['n_still_z3']} ({b['n_new_z3']})",
             f"{fnum(100 * b['persist_orig'])} → {fnum(100 * b['persist_clean'])}"]
+
+
+def scope_tally(rows):
+    """Headline box-free tally per split, in-scope (fixed-wing) clips only."""
+    L = ["## Headline (fixed-wing clips only)", "",
+         "Scope is fixed-wing airplanes; clips marked *out of scope* (rotorcraft, drones, cars, "
+         "motorcycles) are listed below but excluded here.", "",
+         "| split | clips with box-free check | ridges z>3 before | still z>3 | new z>3 |", "|---|---|---|---|---|"]
+    for sp in ("dev", *HELDOUT_SETS):
+        bs = [r["boxfree"] for r in rows if r.get("split", "dev") == sp and in_scope(r["clip"]) and r.get("boxfree")]
+        if bs:
+            L.append(f"| {sp} | {len(bs)} | {sum(b['n_ridges_orig_z3'] for b in bs)} | "
+                     f"{sum(b['n_still_z3'] for b in bs)} | {sum(b['n_new_z3'] for b in bs)} |")
+    return L + [""]
 
 
 def write_md(rows, verdicts):
@@ -346,11 +373,13 @@ def write_md(rows, verdicts):
              "(airshow, colsto); pure noise ≈ 7 dB, so → ~7 means the ridges are gone.",
              "- **visual verdict**: written after viewing each PNG (see `verdicts.json`).", "",
              *([f"_Verdict snapshot: {verdicts['_note']}_", ""] if "_note" in verdicts else []),
+             *scope_tally(rows),
              "| " + " | ".join(COLS) + " |", "|" + "---|" * len(COLS)]
     for r in rows:
         v = verdicts.get(r["clip"], "(not yet reviewed)")
         lines.append("| " + " | ".join([
             f"[{r['clip']}]({r['img_ba']}) ([rt]({r['img_rt']}))", r.get("split", "dev"), r["set"],
+            "fixed-wing" if in_scope(r["clip"]) else "out of scope",
             f"{r['n_doppler']}/{r['n_detected']}", fnum(r["n_true"], 0) if r["n_true"] is not None else "–",
             fnum(r["n_matched"], 0) if r["n_matched"] is not None else "–",
             fnum(r["residual_db"]),

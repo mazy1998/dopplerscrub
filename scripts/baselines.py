@@ -205,8 +205,10 @@ def is_visible(r):
 
 
 def summary_table(rows, split):
-    """Method x metric medians for one split, over clips with a curve visible before."""
-    rows = [r for r in rows if r["split"] == split]
+    """Method x metric medians for one split, over in-scope (fixed-wing) clips with a curve
+    visible before. Out-of-scope clips keep their per-clip sections but are not counted."""
+    import benchmark as bm
+    rows = [r for r in rows if r["split"] == split and bm.in_scope(r["clip"])]
     visible = {r["clip"] for r in rows if r["method"] == "dopplerscrub" and is_visible(r)}
     if not rows:
         return [f"_No {split} rows._", ""], visible
@@ -243,6 +245,7 @@ def summary_table(rows, split):
 
 
 def write_md(rows, verdicts):
+    import benchmark as bm
     by_m = {m: [r for r in rows if r["method"] == m] for m in METHODS}
     when = max((r.get("time", "") for r in rows), default="?")
     L = ["# Targeted removal vs blanket baselines", "",
@@ -254,6 +257,8 @@ def write_md(rows, verdicts):
          "only removal, masking or the output noise floor can hide a tone.", "",
          "† Runtimes were measured on a shared CPU while other jobs (benchmark runs, other agents) "
          "were running; treat them as rough upper bounds, not as a performance measurement.", "",
+         "**Scope:** fixed-wing airplanes (propeller and jet). Medians below cover in-scope clips "
+         "only; rotorcraft, drone and road-vehicle clips keep their per-clip sections, marked OUT OF SCOPE.", "",
          "**Claim under test:** targeted removal hides the Doppler curves as well as blanket "
          "methods while damaging far less audio.", ""]
     if "_summary" in verdicts:
@@ -323,7 +328,7 @@ def write_md(rows, verdicts):
             clips.append(r["clip"])
     for c in clips:
         cr = [r for r in rows if r["clip"] == c]
-        L += [f"### {c} ({cr[0]['set']}, {cr[0]['split']}{', curve visible before' if c in visible else ', curve NOT visible before'})",
+        L += [f"### {c} ({cr[0]['set']}, {cr[0]['split']}{'' if bm.in_scope(c) else ', OUT OF SCOPE (not fixed-wing)'}{', curve visible before' if c in visible else ', curve NOT visible before'})",
               "", f"![{c}](img/bl_{c}.png)", "",
               "| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |",
               "|" + "---|" * 13]
