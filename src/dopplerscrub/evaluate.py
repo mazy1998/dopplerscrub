@@ -922,3 +922,292 @@ def fidelity_boxes(x_orig, x_clean, sr, boxes: Sequence[tuple]) -> float:
     for t0, t1, f0, f1 in boxes:
         keep[np.ix_((f >= f0) & (f <= f1), (t >= t0) & (t <= t1))] = False
     return _snr(float(Pa[keep].sum()), float(Pd[keep].sum()))
+
+
+# --------------------------------------------------------------------------- dopfast attacker
+#
+# A matched-filter attacker after the "dopfast" pipeline (Doppler geolocation paper, sec. 3.2
+# and 4, Listing 3). It does not look for visible ridges: it correlates a whitened
+# log-frequency spectrogram S(s, l) with a bank of exact straight-pass templates
+# f0 * g(t - h; v, d) carrying a harmonic comb (offsets log j), maximises over source pitch and
+# robustly standardises over time, giving the evidence volume E[v, d, s]. Its peaks are what
+# the attacker geolocates from. Because it integrates every frame of the curve and every
+# harmonic together, faint leftover plateaus and harmonics add up.
+#
+# Choices the paper leaves open (documented here; chosen on DEV clips for the strongest
+# attacker, see docs/results/dopfast.md): 4 kHz mono, 0.512 s Hann STFT with 0.125 s hop
+# (shorter than the stock 2 s view, to keep the steep CPA part sharp); a Gaussian temporal
+# weight b(w) with sigma = d / v (the paper's b; the Fisher appendix puts the shape
+# information at the steep CPA part, while long plateaus also match the nulls); per-bin
+# median whitening over the analysed span; S = positive excess dB clipped at DF_CLIP_DB
+# (a loud transient cannot dominate); log grid of DF_DL; Gaussian ridge profile of DF_SIGMA
+# (log units); harmonic weights 1/j for j = 1..DF_HARMONICS; templates zero-mean over their
+# bounding box (flat broadband energy scores ~0) and unit L2 norm; a placement is valid
+# only if the fundamental's whole curve lies inside the band. Calibration is eq. (18)
+# (median / 1.4826 MAD over time per shape).
+
+DF_C = 343.0
+DF_HOP_S = 0.125
+DF_NPERSEG = 2048           # 0.512 s Hann (1.95 Hz bins)
+DF_DL = 0.005
+DF_SIGMA = 0.012
+DF_HARMONICS = 4
+DF_CLIP_DB = 20.0
+DF_V = (30.0, 45.0, 70.0, 100.0, 140.0, 200.0, 280.0)
+DF_D = (40.0, 80.0, 160.0, 320.0, 640.0, 1280.0, 2560.0)
+DF_POLARITY = "pos"        # S from the positive excess ("pos"), the deficit ("neg": an attacker
+                           # hunting curve-shaped NOTCHES) or the absolute deviation ("abs")
+DF_NULLS = 6               # frame-shuffled copies (plus one time-reversed copy)
+DF_ZERO_MEAN = True        # template zero-mean over its box (False: nonnegative, unit total weight)
+DF_MAX_HALF_S = 40.0       # template temporal support cap (+-)
+DF_CORE = 1.0              # b(w): Gaussian temporal weight, sigma = DF_CORE * d / v (None = flat);
+                           # emphasises the steep CPA part, where the shape information is
+DF_CORE_MIN_S = 2.0        # b(w) sigma >= this: an aircraft tone persists for seconds around
+                           # CPA (a bird chirp or a short glide does not)
+DF_CORE_IN = 2.0           # a placement is valid only if +-DF_CORE_IN * sigma_w lies inside the file
+
+
+def dopfast_g(w: np.ndarray, v: float, d: float, c: float = DF_C) -> np.ndarray:
+    """Straight-pass received-frequency ratio g(w; v, d) at received time w = t - h
+    (paper eqs. 6 and 8; g(0) = 1, falls through the pass)."""
+    beta = v / c
+    z = w + d / c
+    u = (z - np.sqrt(beta ** 2 * z ** 2 + (1 - beta ** 2) * (d / c) ** 2)) / (1 - beta ** 2)
+    return c / (c + v ** 2 * u / np.sqrt(d ** 2 + v ** 2 * u ** 2))
+
+
+def _df_spectrogram(x: np.ndarray, sr: int, fmin: float, fmax: float):
+    """Whitened log-frequency spectrogram S (T, Nl) >= 0, its times and log-frequency grid."""
+    a = _attack_signal(x, sr)
+    hop = int(round(DF_HOP_S * ATTACK_SR))
+    f, t, Z = ss.stft(a, ATTACK_SR, nperseg=DF_NPERSEG, noverlap=DF_NPERSEG - hop, window="hann",
+                      boundary=None, padded=False)
+    L = 10 * np.log10(np.abs(Z) ** 2 + 1e-20)
+    L = L - np.median(L, axis=1, keepdims=True)
+    band = (f >= fmin) & (f <= fmax)
+    L = L - np.median(L[band], axis=0, keepdims=True)   # per-frame: removes broadband gusts/roar
+    lg = np.arange(np.log(fmin), np.log(fmax), DF_DL)
+    S = np.empty((L.shape[1], len(lg)), np.float32)
+    ff = np.exp(lg)
+    for k in range(L.shape[1]):
+        S[k] = np.interp(ff, f, L[:, k])
+    if DF_POLARITY == "neg":
+        S = -S
+    elif DF_POLARITY == "abs":
+        S = np.abs(S)
+    return np.clip(S, 0.0, DF_CLIP_DB), t, lg
+
+
+def _df_template(v: float, d: float, sigma_bins: float):
+    """Template T (Kt, Kl), zero-mean over its box, unit norm; anchor (a0, b0) = the
+    (w = 0, fundamental pitch) cell; and the fundamental's log-pitch excursion (lo, hi)."""
+    half = float(np.clip(4.0 * d / v, 6.0, DF_MAX_HALF_S))
+    w = np.arange(-half, half + 1e-9, DF_HOP_S)
+    lgw = np.log(dopfast_g(w, v, d))
+    lo, hi = float(lgw.min()), float(lgw.max())
+    pad = 3.0 * sigma_bins * DF_DL
+    top = hi + np.log(DF_HARMONICS) + pad
+    bot = lo - pad
+    nl = int(np.ceil((top - bot) / DF_DL)) + 1
+    grid = bot + np.arange(nl) * DF_DL
+    T = np.zeros((len(w), nl))
+    for j in range(1, DF_HARMONICS + 1):
+        T += (1.0 / j) * np.exp(-0.5 * ((grid[None, :] - lgw[:, None] - np.log(j)) / (sigma_bins * DF_DL)) ** 2)
+    if DF_CORE:
+        T *= np.exp(-0.5 * (w / max(DF_CORE * d / v, DF_CORE_MIN_S)) ** 2)[:, None]
+    if DF_ZERO_MEAN:
+        T -= T.mean()
+        T /= np.linalg.norm(T) + 1e-12
+    else:
+        T /= T.sum() + 1e-12
+    a0 = int(np.argmin(np.abs(w)))
+    b0 = int(round(-bot / DF_DL))                 # fundamental log-pitch 0 (g = 1) row
+    return T, a0, b0, lo, hi
+
+
+_DF_TEMPLATES: dict = {}
+
+
+def _df_bank():
+    key = (DF_V, DF_D, DF_DL, DF_SIGMA, DF_HARMONICS, DF_HOP_S, DF_ZERO_MEAN, DF_MAX_HALF_S, DF_CORE,
+           DF_CORE_MIN_S)
+    if key not in _DF_TEMPLATES:
+        _DF_TEMPLATES.clear()
+        _DF_TEMPLATES[key] = [(v, d, *_df_template(v, d, DF_SIGMA / DF_DL)) for v in DF_V for d in DF_D]
+    return _DF_TEMPLATES[key]
+
+
+def dopfast_evidence(S: np.ndarray, lg: np.ndarray):
+    """Evidence volume E (Nv, Nd, T) and the maximising pitch index (Nv, Nd, T) for a
+    whitened log-frequency spectrogram S (T, Nl). Placements whose fundamental curve would
+    leave the band are invalid (NaN before calibration, -inf after)."""
+    bank = _df_bank()
+    Tn, Nl = S.shape
+    Kt = max(b[2].shape[0] for b in bank)
+    Kl = max(b[2].shape[1] for b in bank)
+    shape = (Tn + Kt - 1, Nl + Kl - 1)
+    FS = np.fft.rfft2(S.astype(np.float64), s=shape)
+    E = np.full((len(DF_V), len(DF_D), Tn), -np.inf)
+    P = np.zeros((len(DF_V), len(DF_D), Tn), int)
+    for v, d, T, a0, b0, lo, hi in bank:
+        iv, idd = DF_V.index(v), DF_D.index(d)
+        C = np.fft.irfft2(FS * np.conj(np.fft.rfft2(T, s=shape)), s=shape)
+        # C[lt, ll] = sum S[a + lt, b + ll] T[a, b] for non-negative lags; event time index
+        # = lt + a0, fundamental pitch index = ll + b0
+        lt = np.arange(Tn) - a0
+        ll = np.arange(Nl) - b0
+        ok_l = (np.arange(Nl) + lo / DF_DL >= 0) & (np.arange(Nl) + hi / DF_DL <= Nl - 1)
+        if not ok_l.any():
+            continue
+        Cm = C[np.ix_(lt % shape[0], ll % shape[1])]
+        Cm[:, ~ok_l] = -np.inf
+        if DF_CORE:
+            k = int(np.ceil(DF_CORE_IN * max(DF_CORE * d / v, DF_CORE_MIN_S) / DF_HOP_S))
+            ev_t = np.arange(Tn)
+            ok_t = (ev_t - k >= 0) & (ev_t + k <= Tn - 1)
+        else:
+            ok_t = (lt >= -(T.shape[0] - 1) // 2) & (lt + T.shape[0] - 1 <= Tn - 1 + (T.shape[0] - 1) // 2)
+        R = Cm.max(axis=1)
+        R[~ok_t] = np.nan
+        P[iv, idd] = Cm.argmax(axis=1)
+        good = np.isfinite(R)
+        if good.sum() < 8:
+            continue
+        med = np.median(R[good])
+        mad = 1.4826 * np.median(np.abs(R[good] - med))
+        E[iv, idd] = np.where(good, (R - med) / max(mad, 1e-6), -np.inf)
+    return E, P
+
+
+def _df_peak(E):
+    i = np.unravel_index(int(np.argmax(E)), E.shape)
+    return float(E[i]), i
+
+
+# ---- events (the headline): how many USABLE pass events remain per recording.
+# Paper sec. 7 / 12.1 / App. C: with an unknown recording clock the attacker needs >= 2 usable
+# events to intersect; with a known or guessable clock ONE usable event localises to about two
+# mirror points. Thresholds below are calibrated on null clips and synthetic passes only
+# (scripts/dopfast_calibrate.py, docs/results/dopfast.md) and then frozen.
+
+DF_EVENT_TAU = 12.0        # E peak (robust z) for an event. Frozen from dopfast_calibrate.py:
+                           # 0.29 false events/min on all null material (0.14/min on time-reversed or
+                           # frame-shuffled dev clips; the rest are synth birds and road traffic),
+                           # 9/14 synth_hard straight passes detected, plateau-only passes 0/6 usable
+DF_EVENT_SEP_S = 5.0       # peaks closer than this (s) are one event (paper sec. 6.3 grouping)
+DF_EVENT_WIN_S = 1.0       # (v, d) profile of an event: max of E within +-this of its time
+DF_USE_MARGIN = 0.25       # near-peak region: E >= peak * (1 - margin)
+DF_USE_DSPAN = 2           # usable if that region spans <= this many d-grid steps (x4 in d)
+                           # and does not touch the largest d (unbounded above)
+
+
+def dopfast_volume(x: np.ndarray, sr: int, fmin: float = FMIN, fmax: float = 1000.0):
+    """(E, P, t, lg) for one signal: evidence volume, maximising pitch index, times, log grid."""
+    S, t, lg = _df_spectrogram(_mono(x).astype(np.float64), sr, fmin, fmax)
+    E, P = dopfast_evidence(S, lg)
+    return E, P, t, lg
+
+
+def dopfast_event_list(E, P, t, lg, tau: float | None = None, sep_s: float = DF_EVENT_SEP_S,
+                       margin: float = DF_USE_MARGIN, dspan: int = DF_USE_DSPAN) -> list[dict]:
+    """Events = peaks of max_{v,d} E[v, d, s] over time, >= tau, grouped by non-maximum
+    suppression within sep_s. Each event: time s, best (v, d, f0), peak E, and whether it is
+    USABLE: the (v, d) profile (max of E within +-DF_EVENT_WIN_S) has its near-peak region
+    (E >= peak * (1 - margin)) spanning <= dspan d-grid steps and not reaching the largest d.
+    A plateau-only leftover matches every distance about equally: detected, not usable."""
+    tau = DF_EVENT_TAU if tau is None else tau
+    Nv, Nd, T = E.shape
+    flat = E.reshape(Nv * Nd, T)
+    em = flat.max(0)
+    arg = flat.argmax(0)
+    dt = t[1] - t[0] if len(t) > 1 else DF_HOP_S
+    order = np.argsort(-em)
+    events, taken = [], []
+    for k in order:
+        if not np.isfinite(em[k]) or em[k] < tau:
+            break
+        if any(abs(t[k] - t[j]) < sep_s for j in taken):
+            continue
+        taken.append(k)
+        iv, idd = divmod(int(arg[k]), Nd)
+        w = max(1, int(round(DF_EVENT_WIN_S / dt)))
+        prof = E[:, :, max(0, k - w):k + w + 1].max(axis=2)            # (Nv, Nd)
+        near = prof >= em[k] * (1 - margin)
+        dn = np.flatnonzero(near.any(axis=0))
+        vn = np.flatnonzero(near.any(axis=1))
+        d_span = int(dn.max() - dn.min()) if len(dn) else Nd
+        usable = bool(d_span <= dspan and dn.max() < Nd - 1)
+        events.append({"s": float(t[k]), "E": float(em[k]), "v": DF_V[iv], "d": DF_D[idd],
+                       "f0": float(np.exp(lg[P[iv, idd, k]])), "d_span": d_span,
+                       "d_range": [DF_D[dn.min()], DF_D[dn.max()]] if len(dn) else None,
+                       "v_range": [DF_V[vn.min()], DF_V[vn.max()]] if len(vn) else None,
+                       "usable": usable})
+    return sorted(events, key=lambda e: e["s"])
+
+
+def dopfast_file(x: np.ndarray, sr: int, fmin: float = FMIN, fmax: float = 1000.0,
+                 nulls: int = 0, seed: int = 0) -> dict:
+    """dopfast on one signal: peak evidence, its event (v, d, s, f0) and the null
+    calibration (time-reversed + `nulls` frame-shuffled copies of the same spectrogram).
+    Keys starting with '_' hold arrays for dopfast(); drop them before serialising."""
+    rng = np.random.default_rng(seed)
+    S, t, lg = _df_spectrogram(_mono(x).astype(np.float64), sr, fmin, fmax)
+    E, P = dopfast_evidence(S, lg)
+    pk, (iv, idd, it) = _df_peak(E)
+    if nulls > 0:
+        null = [_df_peak(dopfast_evidence(S[::-1], lg)[0])[0]]
+        for _ in range(nulls):
+            null.append(_df_peak(dopfast_evidence(S[rng.permutation(S.shape[0])], lg)[0])[0])
+        null = np.array(null)
+        mu = float(null.mean())
+        sd = float(null.std(ddof=1)) if len(null) > 1 else float("nan")
+    else:
+        mu = sd = float("nan")
+    ev_list = dopfast_event_list(E, P, t, lg)
+    return {"peak": pk, "null_mean": mu, "null_sd": sd, "events": ev_list,
+            "n_events": len(ev_list), "n_usable": sum(e["usable"] for e in ev_list),
+            "z": (pk - mu) / sd if sd and sd > 0 else float("nan"),
+            "event": {"v": DF_V[iv], "d": DF_D[idd], "s": float(t[it]),
+                      "f0": float(np.exp(lg[P[iv, idd, it]]))},
+            "_E": E, "_t": t, "_idx": (iv, idd, it)}
+
+
+def dopfast(x_orig: np.ndarray, x_clean: np.ndarray, sr: int, fmin: float = FMIN,
+            fmax: float = 1000.0, nulls: int = 0, seed: int = 0,
+            orig: dict | None = None) -> dict:
+    """dopfast attacker before vs after cleaning (JSON-ready dict).
+
+    peak_* : max of E[v, d, s] (robust z units, max over shapes, times and pitches).
+    z_*    : (peak - null mean) / null sd, the null being the same peak statistic on the
+             same file's time-reversed spectrogram (falling templates cannot match rising
+             curves) and frame-shuffled copies (per-frame spectra kept, curves destroyed).
+             z > 3: the evidence peak stands out from the file's own non-Doppler structure.
+    at_orig_clean / z_at_orig_clean: E of the CLEANED file at the original's peak shape,
+             within +-1 s of its event time, and that value against the cleaned file's null
+             of PEAKS (conservative): does the event the attacker would geolocate survive?
+    `orig` = a previous dopfast_file(x_orig, ...) result to reuse (same fmin/fmax/nulls).
+
+    HEADLINE (events; frozen thresholds DF_EVENT_* / DF_USE_*): n_events_* and n_usable_*
+    before/after, the event lists, pass_unknown_clock (<= 1 usable event left: no
+    intersection; None = n/a, the original had < 2) and pass_known_clock (0 usable left;
+    None = n/a, the original had none). With nulls=0 (default) the per-file
+    null z is skipped (nan) and only the events are computed.
+    """
+    a, b = _align(_mono(x_orig).astype(np.float64), _mono(x_clean).astype(np.float64))
+    o = orig if orig is not None else dopfast_file(a, sr, fmin, fmax, nulls, seed)
+    c = dopfast_file(b, sr, fmin, fmax, nulls, seed)
+    out = {"fmin": fmin, "fmax": fmax}
+    for key, r in (("orig", o), ("clean", c)):
+        out.update({f"peak_{key}": r["peak"], f"null_mean_{key}": r["null_mean"],
+                    f"null_sd_{key}": r["null_sd"], f"z_{key}": r["z"], f"event_{key}": r["event"],
+                    f"n_events_{key}": r["n_events"], f"n_usable_{key}": r["n_usable"],
+                    f"events_{key}": r["events"]})
+    # a criterion only applies if the ORIGINAL failed it (else "pass" says nothing): None = n/a
+    out["pass_unknown_clock"] = bool(c["n_usable"] <= 1) if o["n_usable"] >= 2 else None
+    out["pass_known_clock"] = bool(c["n_usable"] == 0) if o["n_usable"] >= 1 else None
+    iv, idd, it = o["_idx"]
+    win = np.abs(c["_t"] - o["_t"][it]) <= 1.0
+    out["at_orig_clean"] = float(np.max(c["_E"][iv, idd][win])) if win.any() else float("nan")
+    mu, sd = c["null_mean"], c["null_sd"]
+    out["z_at_orig_clean"] = (out["at_orig_clean"] - mu) / sd if sd and sd > 0 else float("nan")
+    return out

@@ -150,3 +150,68 @@ def test_anti_forensics_harmonic_and_notch():
     af3 = ev.anti_forensics(noise.astype(np.float32), notched[:n].astype(np.float32), SR, [tr])
     assert af3["edge_step_db"] < -3
     assert af3["stats"]["clean"]["corridor"]["mean"] < 0.5 * af3["stats"]["clean"]["flank"]["mean"]
+
+
+# ----------------------------------------------------------------------------- dopfast attacker
+
+def _df_pass(n, sr, amp, v=70.0, d=160.0, h=30.0, f0=110.0, harmonics=(1, 2, 3)):
+    from dopplerscrub import evaluate as ev
+    tt = np.arange(n) / sr
+    ph = 2 * np.pi * np.cumsum(f0 * ev.dopfast_g(tt - h, v, d)) / sr
+    return sum(amp / j * np.cos(j * ph) for j in harmonics)
+
+
+def test_dopfast_g_shape():
+    from dopplerscrub import evaluate as ev
+    w = np.linspace(-20, 20, 401)
+    g = ev.dopfast_g(w, 100.0, 2500.0)
+    assert abs(ev.dopfast_g(np.array([0.0]), 100.0, 2500.0)[0] - 1.0) < 1e-12
+    assert np.all(np.diff(g) < 0)                         # falls through the pass
+    assert g[0] > 1.0 > g[-1]
+
+
+def test_dopfast_finds_faint_pass_and_its_shape():
+    from dopplerscrub import evaluate as ev
+    sr, n = 8000, 60 * 8000
+    noise = 0.01 * np.random.default_rng(0).standard_normal(n)
+    x = noise + _df_pass(n, sr, 0.004)
+    r = ev.dopfast(x, noise, sr, nulls=3)
+    assert r["z_orig"] > 10
+    e = r["event_orig"]
+    assert e["v"] == 70.0 and e["d"] == 160.0 and abs(e["s"] - 30.0) < 0.5 and abs(e["f0"] - 110) < 3
+    assert r["z_clean"] < 3 and r["z_at_orig_clean"] < 3
+
+
+def test_dopfast_events_usable_before_none_after():
+    from dopplerscrub import evaluate as ev
+    sr, n = 8000, 90 * 8000
+    noise = 0.01 * np.random.default_rng(2).standard_normal(n)
+    x = noise + _df_pass(n, sr, 0.004, h=45.0)
+    r = ev.dopfast(x, noise, sr)
+    assert r["n_usable_orig"] == 1 and r["n_events_orig"] == 1
+    e = r["events_orig"][0]
+    assert abs(e["s"] - 45.0) < 1.5 and e["usable"]
+    assert r["n_usable_clean"] == 0 and r["pass_known_clock"] is True
+    assert r["pass_unknown_clock"] is None              # only 1 usable before: n/a
+
+
+def test_dopfast_plateau_only_is_not_usable():
+    """A remover that takes only the steep CPA core leaves plateaus: not a usable event."""
+    from dopplerscrub import evaluate as ev
+    sr, n = 8000, 90 * 8000
+    tt = np.arange(n) / sr
+    noise = 0.01 * np.random.default_rng(3).standard_normal(n)
+    full = _df_pass(n, sr, 0.004, h=45.0)
+    fade = np.clip((np.abs(tt - 45.0 - 160 / ev.DF_C) - 2 * 160 / 70) / 1.0, 0, 1)
+    r = ev.dopfast(noise + full, noise + full * fade, sr)
+    assert r["n_usable_orig"] == 1 and r["n_usable_clean"] == 0
+
+
+def test_dopfast_noise_and_reversed_pass_are_null():
+    from dopplerscrub import evaluate as ev
+    sr, n = 8000, 60 * 8000
+    noise = 0.01 * np.random.default_rng(1).standard_normal(n)
+    rising = noise + _df_pass(n, sr, 0.004)[::-1]           # time-reversed pass: not a Doppler curve
+    r = ev.dopfast(noise, rising, sr, nulls=3)
+    assert r["z_orig"] < 3
+    assert r["peak_clean"] < r["null_mean_clean"] + 6 * r["null_sd_clean"]

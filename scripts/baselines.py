@@ -114,8 +114,13 @@ def cached_apply(method, x, sr, clip, force=False):
 
 # ------------------------------------------------------------------ metrics
 
-def metrics(x, y, sr, clip, v_clean, v_orig):
+def metrics(x, y, sr, clip, v_clean, v_orig, df_orig=None):
     m = {}
+    # dopfast matched-filter attacker (evaluate.dopfast), on every clip
+    df = ev.dopfast(x, y, sr, orig=df_orig)
+    m.update({"df_usable_orig": df["n_usable_orig"], "df_usable": df["n_usable_clean"],
+              "df_events_orig": df["n_events_orig"], "df_events": df["n_events_clean"],
+              "df_pass_unknown": df["pass_unknown_clock"], "df_pass_known": df["pass_known_clock"]})
     true = clip["true"]
     if true:
         tb = [t for t in true if np.nanmedian(t.f) <= ev.FMAX and np.nanmax(t.f) >= ev.FMIN]
@@ -202,7 +207,7 @@ def med(vals):
 
 def is_visible(r):
     return ((r.get("af_z_orig") or 0) > 3 or (r.get("box_hi_orig") or 0) > 0.02
-            or (r.get("bf_z3_orig") or 0) > 0)
+            or (r.get("bf_z3_orig") or 0) > 0 or (r.get("df_usable_orig") or 0) > 0)
 
 
 def summary_table(rows, split):
@@ -216,9 +221,9 @@ def summary_table(rows, split):
     L = [f"Clips with a curve visible before cleaning ({len(visible)}): {', '.join(sorted(visible)) or 'none'}.", "",
          "| method | AF z after (synth) ↓ | integrated residual ≤-10 dB (synth, n/N) | exact contrast dB ↓ | "
          "tolerant ridge excess dB ↓ | event-box ridge cells % (real) ↓ | box-free ridges still z>3 (Σ still / Σ before; new) ↓ | "
-         "persistent cells % ↓ | SNR outside dB ↑ | speech SNR dB ↑ | "
+         "persistent cells % ↓ | dopfast usable events Σ before → after; pass unknown / known clock ↑ | SNR outside dB ↑ | speech SNR dB ↑ | "
          "LSD dB ↓ | LSD >450 Hz dB ↓ | STOI-like ↑ | TF modified (all / 40–450 / >450) ↓ | runtime s † |",
-         "|" + "---|" * 16]
+         "|" + "---|" * 17]
     for m in METHODS:
         rs = [r for r in rows if r["method"] == m]
         if not rs:
@@ -237,6 +242,9 @@ def summary_table(rows, split):
              + (f" ({sum(r['bf_new_created_z3'] for r in bfr)} created)"
                 if all("bf_new_created_z3" in r for r in bfr) else "")) if bfr else "–",
             fnum(100 * med([r["bf_persist"] for r in bfr])),
+            (lambda dfr: (f"{sum(r['df_usable_orig'] for r in dfr)} → {sum(r['df_usable'] for r in dfr)}; "
+                          f"{bm._ptally([r['df_pass_unknown'] for r in dfr])}, {bm._ptally([r['df_pass_known'] for r in dfr])}")
+             if dfr else "–")([r for r in rows if r["method"] == m and "df_usable" in r]),
             fnum(med([r["snr_outside_db"] for r in vis])), fnum(med([r["speech_snr_db"] for r in vis])),
             fnum(med([r["lsd_db"] for r in vis]), 2), fnum(med([r["lsd_above450_db"] for r in vis]), 2),
             fnum(med([r["stoi_like"] for r in vis]), 3),
@@ -293,6 +301,7 @@ def write_md(rows, verdicts):
           f"AF z {fnum(med([r.get('af_z_orig') for r in by_m['bandstop'] if r['clip'] in visible]))}; "
           f"event-box ridge cells {fnum(100 * med([r.get('box_hi_orig') for r in by_m['bandstop'] if r['clip'] in visible and 'box_hi_orig' in r]))}%.", "",
           "### Metric definitions", "",
+          "- **dopfast z** (`evaluate.dopfast`; the faster attacker of the Doppler-geolocation paper, sec. 3.2-4.4): matched filter of a whitened log-frequency spectrogram (40-1000 Hz, 0.256 s / 0.125 s) against a bank of exact straight-pass templates f0*g(t-h; v, d) with a 4-harmonic comb, max over pitch, robust median/MAD per shape (evidence E[v, d, s]). z = (peak E - null mean) / null sd, the null being the same peak on the file's time-reversed and frame-shuffled spectrograms; z > 3 = an event the attacker can geolocate from. **at orig event** = the cleaned file's E at the original's peak shape and time (+-1 s), on the same null. It integrates faint plateaus and harmonics that no single ridge shows.",
           "- **AF z**: significance of on-curve power over the per-bin floor, integrated over every "
           "frame of the TRUE curves (`evaluate.anti_forensics`). z > 3 means an attacker who integrates "
           "along the pass detects it. **≤-10 dB** = its 95% upper bound is ≥10 dB under the floor "
@@ -334,8 +343,8 @@ def write_md(rows, verdicts):
         cr = [r for r in rows if r["clip"] == c]
         L += [f"### {c} ({cr[0]['set']}, {cr[0]['split']}{'' if bm.in_scope(c) else ', OUT OF SCOPE (not fixed-wing)'}{', curve visible before' if c in visible else ', curve NOT visible before'})",
               "", f"![{c}](img/bl_{c}.png)", "",
-              "| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |",
-              "|" + "---|" * 13]
+              "| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | dopfast usable/events orig → clean | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |",
+              "|" + "---|" * 14]
         for r in cr:
             vd = verdicts.get(c, {}).get(r["method"], "(not yet reviewed)")
             L.append("| " + " | ".join([
@@ -344,6 +353,7 @@ def write_md(rows, verdicts):
                 fnum(r.get("contrast_db")), fnum(r.get("ridge_excess_db")),
                 fnum(100 * r["box_hi"]) if "box_hi" in r else "–",
                 (f"{r['bf_still_z3']}/{r['bf_z3_orig']} ({r['bf_new_z3']})" if "bf_z3_orig" in r else "–"),
+                (f"{r['df_usable_orig']}/{r['df_events_orig']} → {r['df_usable']}/{r['df_events']}" if "df_usable" in r else "–"),
                 fnum(r["snr_outside_db"]), fnum(r["speech_snr_db"]), fnum(r["lsd_db"], 2),
                 fnum(r["stoi_like"], 3),
                 f"{fnum(100 * r['tf_mod_all'])}% / {fnum(100 * r['tf_mod_40_450'])}%", vd]) + " |")
@@ -384,6 +394,7 @@ def main(argv=None):
         print(f"== {c['name']}", flush=True)
         x, sr = load(c["path"])
         v_orig = ev.attack_views(x, x, sr)["orig"]
+        df_orig = ev.dopfast_file(x, sr)          # the original's dopfast evidence, once per clip
         views = {"original": v_orig}
         new = []
         for m in a.methods:
@@ -396,13 +407,13 @@ def main(argv=None):
             views[m] = v["clean"]
             r = {"clip": c["name"], "method": m, "set": c["set"], "split": c["split"], "runtime_s": rt,
                  "time": time.strftime("%Y-%m-%d %H:%M")}
-            r.update(metrics(xx, y, sr, c, v["clean"], v_orig))
+            r.update(metrics(xx, y, sr, c, v["clean"], v_orig, df_orig))
             if c["true"]:
                 tb = [t for t in c["true"] if np.nanmedian(t.f) <= ev.FMAX and np.nanmax(t.f) >= ev.FMIN]
                 r["contrast_orig_db"] = ev.track_contrast_db(v_orig, tb)
             new.append(r)
             print(f"   {m:12s} {rt:6.1f}s  " + ("" if a.blind else "  ".join(
-                f"{k}={fnum(r.get(k), 2)}" for k in ("af_z", "ridge_excess_db", "box_hi", "snr_outside_db",
+                f"{k}={fnum(r.get(k), 2)}" for k in ("af_z", "df_usable", "ridge_excess_db", "box_hi", "snr_outside_db",
                                                      "lsd_db", "stoi_like", "tf_mod_all"))), flush=True)
         render(c, views, IMG / f"bl_{c['name']}.png")
         rows = [r for r in rows if not (r["clip"] == c["name"] and r["method"] in {n["method"] for n in new})] + new
