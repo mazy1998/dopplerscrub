@@ -11,3 +11,4 @@ dist/
 .cache/
 docs/img/
 docs/results/img/
+data/synth_hard/*.wav
