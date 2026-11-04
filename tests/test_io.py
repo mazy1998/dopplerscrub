@@ -18,9 +18,21 @@ def ff(*args):
 
 
 def all_tags(path):
-    out = subprocess.run(["ffprobe", "-v", "error", "-print_format", "json", "-show_format",
-                          "-show_streams", "-show_chapters", str(path)],
-                         capture_output=True, check=True).stdout
+    out = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-print_format",
+            "json",
+            "-show_format",
+            "-show_streams",
+            "-show_chapters",
+            str(path),
+        ],
+        capture_output=True,
+        check=True,
+    ).stdout
     info = json.loads(out)
     tags = dict(info["format"].get("tags", {}))
     for s in info["streams"]:
@@ -30,8 +42,25 @@ def all_tags(path):
 
 
 def stream_md5(path, sel):
-    out = subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-i", str(path), "-map", sel,
-                          "-c", "copy", "-f", "md5", "-"], capture_output=True, check=True)
+    out = subprocess.run(
+        [
+            "ffmpeg",
+            "-nostdin",
+            "-v",
+            "error",
+            "-i",
+            str(path),
+            "-map",
+            sel,
+            "-c",
+            "copy",
+            "-f",
+            "md5",
+            "-",
+        ],
+        capture_output=True,
+        check=True,
+    )
     return out.stdout.strip()
 
 
@@ -51,15 +80,48 @@ def video_mp4(tmp_path, tone_wav):
     title and a chapter."""
     wav, _, _ = tone_wav
     chap = tmp_path / "chap.txt"
-    chap.write_text(";FFMETADATA1\ntitle=Secret trip\n[CHAPTER]\nTIMEBASE=1/1000\nSTART=0\n"
-                    "END=1000\ntitle=Home\n")
+    chap.write_text(
+        ";FFMETADATA1\ntitle=Secret trip\n[CHAPTER]\nTIMEBASE=1/1000\nSTART=0\n"
+        "END=1000\ntitle=Home\n"
+    )
     p = tmp_path / "in.mp4"
-    ff("-f", "lavfi", "-i", "testsrc=size=160x120:rate=10:duration=2", "-i", str(wav),
-       "-i", str(chap), "-map", "0:v", "-map", "1:a", "-map_metadata", "2", "-map_chapters", "2",
-       "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k",
-       "-metadata", f"location={LOC}", "-metadata", f"location-eng={LOC}",
-       "-metadata", "creation_time=2026-01-02T03:04:05Z", "-metadata", "make=Apple",
-       "-metadata:s:a:0", "language=eng", str(p))
+    ff(
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc=size=160x120:rate=10:duration=2",
+        "-i",
+        str(wav),
+        "-i",
+        str(chap),
+        "-map",
+        "0:v",
+        "-map",
+        "1:a",
+        "-map_metadata",
+        "2",
+        "-map_chapters",
+        "2",
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "128k",
+        "-metadata",
+        f"location={LOC}",
+        "-metadata",
+        f"location-eng={LOC}",
+        "-metadata",
+        "creation_time=2026-01-02T03:04:05Z",
+        "-metadata",
+        "make=Apple",
+        "-metadata:s:a:0",
+        "language=eng",
+        str(p),
+    )
     return p
 
 
@@ -67,12 +129,33 @@ def video_mp4(tmp_path, tone_wav):
 def video_mov_iso6709(tmp_path, tone_wav):
     wav, _, _ = tone_wav
     p = tmp_path / "in.mov"
-    ff("-f", "lavfi", "-i", "testsrc=size=160x120:rate=10:duration=2", "-i", str(wav),
-       "-map", "0:v", "-map", "1:a", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac",
-       "-movflags", "use_metadata_tags",
-       "-metadata", f"com.apple.quicktime.location.ISO6709={LOC}",
-       "-metadata", "com.apple.quicktime.make=Apple",
-       "-metadata", "com.apple.quicktime.model=iPhone 15", str(p))
+    ff(
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc=size=160x120:rate=10:duration=2",
+        "-i",
+        str(wav),
+        "-map",
+        "0:v",
+        "-map",
+        "1:a",
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-movflags",
+        "use_metadata_tags",
+        "-metadata",
+        f"com.apple.quicktime.location.ISO6709={LOC}",
+        "-metadata",
+        "com.apple.quicktime.make=Apple",
+        "-metadata",
+        "com.apple.quicktime.model=iPhone 15",
+        str(p),
+    )
     return p
 
 
@@ -90,7 +173,7 @@ def test_probe_and_load_wav(tone_wav):
 
 def test_mp4_location_and_metadata_stripped(tmp_path, video_mp4):
     tags_in, info_in = all_tags(video_mp4)
-    assert any("37.7749" in v for v in tags_in.values()), tags_in   # fixture really has it
+    assert any("37.7749" in v for v in tags_in.values()), tags_in  # fixture really has it
     assert info_in.get("chapters")
     x, sr, meta = io.load(video_mp4)
     assert meta["has_video"] and x.shape[1] == 2 and sr == 44100
@@ -138,9 +221,18 @@ def test_keep_metadata_when_asked(tmp_path, video_mp4):
     assert any("37.7749" in v for v in tags.values())
 
 
-@pytest.mark.parametrize("ext,codec", [(".wav", "pcm_s24le"), (".flac", "flac"),
-                                       (".mp3", "mp3"), (".m4a", "aac"), (".opus", "opus"),
-                                       (".ogg", "opus"), (".aiff", "pcm_s24be")])
+@pytest.mark.parametrize(
+    "ext,codec",
+    [
+        (".wav", "pcm_s24le"),
+        (".flac", "flac"),
+        (".mp3", "mp3"),
+        (".m4a", "aac"),
+        (".opus", "opus"),
+        (".ogg", "opus"),
+        (".aiff", "pcm_s24be"),
+    ],
+)
 def test_audio_only_formats(tmp_path, tone_wav, ext, codec):
     p, x, sr = tone_wav
     meta = io.probe(p)
@@ -160,7 +252,7 @@ def test_codec_family_follows_source(tmp_path, tone_wav):
     src = tmp_path / "src.mp3"
     ff("-i", str(p), "-c:a", "libmp3lame", "-b:a", "96k", str(src))
     xs, sr2, meta = io.load(src)
-    out = tmp_path / "out.mkv"           # mkv accepts mp3 -> keep the family
+    out = tmp_path / "out.mkv"  # mkv accepts mp3 -> keep the family
     io.save(src, out, xs, sr2, meta)
     m = io.probe(out)
     assert m["audio"]["codec"] == "mp3"
@@ -174,7 +266,7 @@ def test_mono_input_vector(tmp_path, tone_wav):
     y, _, meta = io.load(mono)
     assert y.shape == (len(x), 1)
     out = tmp_path / "mono_out.flac"
-    io.save(mono, out, y[:, 0], sr, meta)   # 1-D accepted
+    io.save(mono, out, y[:, 0], sr, meta)  # 1-D accepted
     assert io.probe(out)["channels"] == 1
 
 
@@ -183,11 +275,41 @@ def test_multiple_audio_streams_and_subtitles(tmp_path, tone_wav):
     srt = tmp_path / "s.srt"
     srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nhello\n")
     src = tmp_path / "multi.mkv"
-    ff("-f", "lavfi", "-i", "testsrc=size=160x120:rate=10:duration=2", "-i", str(wav),
-       "-f", "lavfi", "-i", "sine=f=500:d=2:sample_rate=48000", "-i", str(srt),
-       "-map", "0:v", "-map", "1:a", "-map", "2:a", "-map", "3:s",
-       "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a:0", "aac", "-c:a:1", "libopus",
-       "-c:s", "srt", "-metadata", f"location={LOC}", str(src))
+    ff(
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc=size=160x120:rate=10:duration=2",
+        "-i",
+        str(wav),
+        "-f",
+        "lavfi",
+        "-i",
+        "sine=f=500:d=2:sample_rate=48000",
+        "-i",
+        str(srt),
+        "-map",
+        "0:v",
+        "-map",
+        "1:a",
+        "-map",
+        "2:a",
+        "-map",
+        "3:s",
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a:0",
+        "aac",
+        "-c:a:1",
+        "libopus",
+        "-c:s",
+        "srt",
+        "-metadata",
+        f"location={LOC}",
+        str(src),
+    )
     meta = io.probe(src)
     assert len(meta["audio_streams"]) == 2 and meta["subtitle_streams"]
     streams, meta = io.load_all(src)
@@ -216,10 +338,29 @@ def test_harmless_stream_tags_kept_everything_else_stripped(tmp_path, video_mp4)
     """language/handler_name survive the strip; a handler naming a device brand
     does not; location/creation_time/make never do."""
     src = tmp_path / "tags.mov"
-    ff("-i", str(video_mp4), "-map", "0:v", "-map", "0:a", "-c", "copy",
-       "-metadata:s:v:0", "handler_name=GoPro AVC", "-metadata:s:v:0", "language=fra",
-       "-metadata:s:a:0", "handler_name=Core Media Audio", "-metadata:s:a:0", "language=eng",
-       "-metadata", f"location={LOC}", "-metadata", "make=GoPro", str(src))
+    ff(
+        "-i",
+        str(video_mp4),
+        "-map",
+        "0:v",
+        "-map",
+        "0:a",
+        "-c",
+        "copy",
+        "-metadata:s:v:0",
+        "handler_name=GoPro AVC",
+        "-metadata:s:v:0",
+        "language=fra",
+        "-metadata:s:a:0",
+        "handler_name=Core Media Audio",
+        "-metadata:s:a:0",
+        "language=eng",
+        "-metadata",
+        f"location={LOC}",
+        "-metadata",
+        "make=GoPro",
+        str(src),
+    )
     x, sr, meta = io.load(src)
     out = tmp_path / "out.mov"
     io.save(src, out, x, sr, meta)
@@ -237,6 +378,6 @@ def test_sensitive_tags_report(video_mp4, tone_wav):
     assert "location" in st["location"] and "location-eng" in st["location"]
     assert "creation_time" in st["other"] and "title" in st["other"]
     assert st["chapters"] == 1
-    assert not any(k.endswith(":language") for k in st["other"])      # kept, not reported
+    assert not any(k.endswith(":language") for k in st["other"])  # kept, not reported
     wav = io.sensitive_tags(io.probe(tone_wav[0]))
     assert wav == {"location": [], "other": [], "chapters": 0, "data_streams": []}

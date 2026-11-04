@@ -12,6 +12,7 @@ Acceptance is deliberately strict (long, smooth, steep, high integrated
 contrast against frequency-shifted controls): the band above 150 Hz also holds
 speech, birds and music, whose pitch tracks are short, wobbly or flat.
 """
+
 from __future__ import annotations
 
 import math
@@ -21,11 +22,11 @@ from scipy import ndimage, signal
 from .types import DetectConfig, Track
 
 HOP = 1 / 16
-WINDOWS = (.0625, .125, .25, .5)
-CHUNK_S, OVERLAP_S = 90., 10.
+WINDOWS = (0.0625, 0.125, 0.25, 0.5)
+CHUNK_S, OVERLAP_S = 90.0, 10.0
 
 
-def _views(y, rate, fmin, fmax, windows=WINDOWS, hop=HOP, df=2.):
+def _views(y, rate, fmin, fmax, windows=WINDOWS, hop=HOP, df=2.0):
     """Frequency-local contrast (dB) for each window; returns t, f, [C_w]."""
     nfft = int(round(rate / df))
     step = int(round(hop * rate))
@@ -43,7 +44,9 @@ def _views(y, rate, fmin, fmax, windows=WINDOWS, hop=HOP, df=2.):
         for c0 in range(0, count, 512):
             c1 = min(count, c0 + 512)
             idx = np.arange(c0, c1)[:, None] * step + np.arange(n)[None, :]
-            spec[:, c0:c1] = np.abs(np.fft.rfft(pad[idx] * win, n=max(nfft, n), axis=1))[:, :len(freq)][:, band].T
+            spec[:, c0:c1] = np.abs(np.fft.rfft(pad[idx] * win, n=max(nfft, n), axis=1))[
+                :, : len(freq)
+            ][:, band].T
         db = 20 * np.log10(spec + 1e-12)
         db -= np.median(db, axis=1, keepdims=True)
         # local contrast: a tone stands above its +-(several main lobes) neighbourhood
@@ -56,14 +59,19 @@ def _block_median(db, width):
     """Background along frequency: medians of half-overlapping blocks of
     `width` bins, linearly interpolated (a running median is ~10x slower and
     the background only needs to be smooth on that scale)."""
-    F = db.shape[0]; step = max(1, width // 2)
+    F = db.shape[0]
+    step = max(1, width // 2)
     starts = np.arange(0, max(F - width, 0) + 1, step)
     if starts[-1] + width < F:
         starts = np.r_[starts, F - width]
     centres = starts + (min(width, F) - 1) / 2
-    med = np.stack([np.median(db[a:a + width], axis=0) for a in starts])
+    med = np.stack([np.median(db[a : a + width], axis=0) for a in starts])
     rows = np.arange(F)
-    hi = np.clip(np.searchsorted(centres, rows), 1, len(centres) - 1) if len(centres) > 1 else np.zeros(F, int)
+    hi = (
+        np.clip(np.searchsorted(centres, rows), 1, len(centres) - 1)
+        if len(centres) > 1
+        else np.zeros(F, int)
+    )
     if len(centres) == 1:
         return np.broadcast_to(med[0], db.shape)
     lo = hi - 1
@@ -71,25 +79,46 @@ def _block_median(db, width):
     return (1 - w) * med[lo] + w * med[hi]
 
 
-SLOPES = np.r_[0., 3., 6., 9., 13., 18., 24., 31., 40., 50., 62., 76., 92., 110., 130., 155., 185., 220.]
-HALF = 8                                   # oriented integration over +-0.5 s
+SLOPES = np.r_[
+    0.0,
+    3.0,
+    6.0,
+    9.0,
+    13.0,
+    18.0,
+    24.0,
+    31.0,
+    40.0,
+    50.0,
+    62.0,
+    76.0,
+    92.0,
+    110.0,
+    130.0,
+    155.0,
+    185.0,
+    220.0,
+]
+HALF = 8  # oriented integration over +-0.5 s
 
 
 def _oriented(C, df):
     """Mean of C along short straight segments; best slope per cell (Hz/s)."""
     F, T = C.shape
-    best = np.full((F, T), -np.inf, np.float32); arg = np.zeros((F, T), np.float32)
+    best = np.full((F, T), -np.inf, np.float32)
+    arg = np.zeros((F, T), np.float32)
     slopes = np.r_[-SLOPES[:0:-1], SLOPES]
     pad = HALF * int(np.ceil(SLOPES[-1] * HOP / df)) + 1
-    P = np.pad(np.clip(C, -10, 25), ((pad, pad), (HALF, HALF)), constant_values=0.)
+    P = np.pad(np.clip(C, -10, 25), ((pad, pad), (HALF, HALF)), constant_values=0.0)
     for s in slopes:
         acc = np.zeros((F, T), np.float32)
         for k in range(-HALF, HALF + 1):
             d = int(round(s * k * HOP / df))
-            acc += P[pad + d:pad + d + F, HALF + k:HALF + k + T]
+            acc += P[pad + d : pad + d + F, HALF + k : HALF + k + T]
         acc /= 2 * HALF + 1
         better = acc > best
-        best[better] = acc[better]; arg[better] = s
+        best[better] = acc[better]
+        arg[better] = s
     return best, arg
 
 
@@ -102,49 +131,64 @@ def _track(A, S, t, f, thr, max_gap=2):
         peaks, _ = signal.find_peaks(col, height=thr, distance=max(2, int(6 / df)))
         if len(peaks) > 60:
             peaks = peaks[np.argsort(col[peaks])[-60:]]
-        a, b, c = col[np.clip(peaks - 1, 0, len(f) - 1)], col[peaks], col[np.clip(peaks + 1, 0, len(f) - 1)]
-        hz = f[peaks] + df * np.clip(.5 * (a - c) / (a - 2 * b + c - 1e-9), -.5, .5)
+        a, b, c = (
+            col[np.clip(peaks - 1, 0, len(f) - 1)],
+            col[peaks],
+            col[np.clip(peaks + 1, 0, len(f) - 1)],
+        )
+        hz = f[peaks] + df * np.clip(0.5 * (a - c) / (a - 2 * b + c - 1e-9), -0.5, 0.5)
         offers = []
         for i, p in enumerate(active):
-            gap = j - p['j'][-1]
-            ss = p['s'][-4:]; slope = sum(ss) / len(ss)
-            pred = p['f'][-1] + slope * gap * HOP
-            tol = 3. + .03 * abs(slope) + 2. * (gap - 1)
+            gap = j - p["j"][-1]
+            ss = p["s"][-4:]
+            slope = sum(ss) / len(ss)
+            pred = p["f"][-1] + slope * gap * HOP
+            tol = 3.0 + 0.03 * abs(slope) + 2.0 * (gap - 1)
             for k in np.flatnonzero(abs(hz - pred) < tol):
                 # the cell's own best slope must agree with the path's
-                if abs(S[peaks[k], j] - slope) > 25. + .35 * abs(slope):
+                if abs(S[peaks[k], j] - slope) > 25.0 + 0.35 * abs(slope):
                     continue
-                offers.append((abs(hz[k] - pred) / tol - .01 * min(len(p['j']), 40), i, k))
+                offers.append((abs(hz[k] - pred) / tol - 0.01 * min(len(p["j"]), 40), i, k))
         used_p, used_k = set(), set()
         for _, i, k in sorted(offers):
             if i in used_p or k in used_k:
                 continue
             q = active[i]
-            q['j'].append(j); q['f'].append(float(hz[k])); q['c'].append(float(b[k])); q['s'].append(float(S[peaks[k], j]))
-            used_p.add(i); used_k.add(k)
+            q["j"].append(j)
+            q["f"].append(float(hz[k]))
+            q["c"].append(float(b[k]))
+            q["s"].append(float(S[peaks[k], j]))
+            used_p.add(i)
+            used_k.add(k)
         keep = []
         for p in active:
-            (keep if j - p['j'][-1] <= max_gap else done).append(p)
-        active = keep + [dict(j=[j], f=[float(hz[k])], c=[float(b[k])], s=[float(S[peaks[k], j])])
-                         for k in range(len(peaks)) if k not in used_k]
+            (keep if j - p["j"][-1] <= max_gap else done).append(p)
+        active = keep + [
+            dict(j=[j], f=[float(hz[k])], c=[float(b[k])], s=[float(S[peaks[k], j])])
+            for k in range(len(peaks))
+            if k not in used_k
+        ]
     return done + active
 
 
 def _sample(C, f, t, tt, ff):
     fi = np.clip((ff - f[0]) / (f[1] - f[0]), 0, len(f) - 1)
     ti = np.clip(np.rint((tt - t[0]) / HOP).astype(int), 0, C.shape[1] - 1)
-    lo = np.floor(fi).astype(int); hi = np.minimum(lo + 1, len(f) - 1); w = fi - lo
+    lo = np.floor(fi).astype(int)
+    hi = np.minimum(lo + 1, len(f) - 1)
+    w = fi - lo
     return (1 - w) * C[lo, ti] + w * C[hi, ti]
 
 
 def _accept(p, C, t, f, min_dur, min_rate):
-    j = np.asarray(p['j']); ff = np.asarray(p['f'])
+    j = np.asarray(p["j"])
+    ff = np.asarray(p["f"])
     if len(j) < 16 or (j[-1] - j[0]) * HOP < min_dur:
         return None
-    if len(j) / (j[-1] - j[0] + 1) < .75:
+    if len(j) / (j[-1] - j[0] + 1) < 0.75:
         return None
     tt = t[j]
-    grid = t[j[0]:j[-1] + 1]
+    grid = t[j[0] : j[-1] + 1]
     fg = np.interp(grid, tt, ff)
     win = min(len(fg) // 2 * 2 - 1, 9)
     smooth = signal.savgol_filter(fg, win, 2)
@@ -153,106 +197,162 @@ def _accept(p, C, t, f, min_dur, min_rate):
     steep = abs(rate) >= min_rate
     # the steep core itself must last: a pass core is one sustained sweep
     runs = np.split(np.flatnonzero(steep), np.flatnonzero(np.diff(np.flatnonzero(steep)) > 2) + 1)
-    if max((len(r) for r in runs), default=0) * HOP < 2. * min_dur / 3:
+    if max((len(r) for r in runs), default=0) * HOP < 2.0 * min_dur / 3:
         return None
-    if np.ptp(smooth) < max(25., .03 * np.median(smooth)):
+    if np.ptp(smooth) < max(25.0, 0.03 * np.median(smooth)):
         return None
-    if jitter > 2.5 + .01 * np.percentile(abs(rate), 90):
+    if jitter > 2.5 + 0.01 * np.percentile(abs(rate), 90):
         return None
     # few turns: pass cores fall once (a maneuver may add one turn on a long
     # track); oscillating pitch (voice, vibrato) reverses every second or two
     coarse = ndimage.gaussian_filter1d(smooth, 4)[::4]
-    prom = max(6., .015 * np.median(smooth))
-    turns = len(signal.find_peaks(coarse, prominence=prom)[0]) + len(signal.find_peaks(-coarse, prominence=prom)[0])
+    prom = max(6.0, 0.015 * np.median(smooth))
+    turns = len(signal.find_peaks(coarse, prominence=prom)[0]) + len(
+        signal.find_peaks(-coarse, prominence=prom)[0]
+    )
     if turns > (1 if len(grid) * HOP >= 6 else 0):
         return None
     on = _sample(C, f, t, grid, smooth)
-    if np.median(on) < 6. or np.mean(on > 3.) < .75:
+    if np.median(on) < 6.0 or np.mean(on > 3.0) < 0.75:
         return None
-    shifts = (-48., -40., -32., -24., 24., 32., 40., 48.)
+    shifts = (-48.0, -40.0, -32.0, -24.0, 24.0, 32.0, 40.0, 48.0)
     controls = np.array([np.mean(_sample(C, f, t, grid, smooth + d)) for d in shifts])
     # adjacent 1/16 s frames share most of their window: ~4 frames per independent sample
-    sd = max(float(np.std(controls, ddof=1)), 4. / np.sqrt(max(len(grid) / 4, 1)))
+    sd = max(float(np.std(controls, ddof=1)), 4.0 / np.sqrt(max(len(grid) / 4, 1)))
     excess = float(np.mean(on) - np.median(controls))
     z = excess / sd
-    if z < 5. or excess < 5.:
+    if z < 5.0 or excess < 5.0:
         return None
     return grid, smooth, float(np.median(on)), float(z)
 
 
 def _spread90(P, ff, radii):
     """Per-frame radius holding 90 % of the excess power (flank floor removed)."""
-    floor = np.median(P[(np.abs(ff) >= 20.) & (np.abs(ff) <= 30.)], axis=0)
+    floor = np.median(P[(np.abs(ff) >= 20.0) & (np.abs(ff) <= 30.0)], axis=0)
     excess = np.array([np.maximum(P[np.abs(ff) <= r] - floor, 0).sum(0) for r in radii])
-    return radii[np.argmax(excess >= .9 * np.maximum(excess[-1], 1e-30), axis=0)]
+    return radii[np.argmax(excess >= 0.9 * np.maximum(excess[-1], 1e-30), axis=0)]
 
 
-def _intrinsic_halfwidth(z, rate, lock, win=.5):
+def _intrinsic_halfwidth(z, rate, lock, win=0.5):
     """Tone half-width (Hz) after dechirping: the 90 %-energy radius in 0.5 s
     baseband windows, with the window's own pure-tone spread removed in
     quadrature. Floors at the remover default (2 Hz)."""
-    n = int(win * rate); step = max(1, int(HOP * rate))
-    ff, tt, Z = signal.stft(z, rate, window='hann', nperseg=n, noverlap=n - step, nfft=max(n, 4096),
-                            return_onesided=False, boundary=None, padded=False)
-    radii = np.arange(.5, 15.25, .25)
+    n = int(win * rate)
+    step = max(1, int(HOP * rate))
+    ff, tt, Z = signal.stft(
+        z,
+        rate,
+        window="hann",
+        nperseg=n,
+        noverlap=n - step,
+        nfft=max(n, 4096),
+        return_onesided=False,
+        boundary=None,
+        padded=False,
+    )
+    radii = np.arange(0.5, 15.25, 0.25)
     r = _spread90(np.abs(Z) ** 2, ff, radii)
-    tone = np.exp(2j * np.pi * .0 * np.arange(4 * n) / rate)
-    _, _, Zt = signal.stft(tone, rate, window='hann', nperseg=n, noverlap=n - step, nfft=max(n, 4096),
-                           return_onesided=False, boundary=None, padded=False)
+    tone = np.exp(2j * np.pi * 0.0 * np.arange(4 * n) / rate)
+    _, _, Zt = signal.stft(
+        tone,
+        rate,
+        window="hann",
+        nperseg=n,
+        noverlap=n - step,
+        nfft=max(n, 4096),
+        return_onesided=False,
+        boundary=None,
+        padded=False,
+    )
     r0 = float(np.median(_spread90(np.abs(Zt) ** 2 + 1e-30, ff, radii)))
-    good = np.interp(np.arange(len(r)), np.linspace(0, len(r) - 1, len(lock)), lock) > .2
+    good = np.interp(np.arange(len(r)), np.linspace(0, len(r) - 1, len(lock)), lock) > 0.2
     if not good.any():
-        return float('nan')
-    return float(max(2., np.sqrt(max(np.median(r[good]) ** 2 - r0 ** 2, 0.))))
+        return float("nan")
+    return float(max(2.0, np.sqrt(max(np.median(r[good]) ** 2 - r0**2, 0.0))))
 
 
-def refine_dechirp(y, rate, t, f, iterations=3, spans=(25., 10., 5.), win=.25):
+def refine_dechirp(y, rate, t, f, iterations=3, spans=(25.0, 10.0, 5.0), win=0.25):
     """Iteratively re-centre f(t) on the tone: heterodyne along the current
     curve, read the residual frequency offset in short baseband windows,
     smooth it in time and fold it back. A sweep of 150 Hz/s smears across
     any fixed-window spectrogram, but is a near-DC line after dechirping, so
     0.25 s baseband windows measure it to a fraction of a Hz."""
     from scipy.interpolate import CubicSpline
-    t = np.asarray(t, float); f = np.asarray(f, float).copy()
-    a = max(0, int((t[0] - .5) * rate)); b = min(len(y), int((t[-1] + .5) * rate))
+
+    t = np.asarray(t, float)
+    f = np.asarray(f, float).copy()
+    a = max(0, int((t[0] - 0.5) * rate))
+    b = min(len(y), int((t[-1] + 0.5) * rate))
     if b - a < int(2 * win * rate) or len(t) < 4:
-        return f, np.zeros(len(t)), float('nan')
+        return f, np.zeros(len(t)), float("nan")
     ts = np.arange(a, b) / rate
-    n = int(win * rate); step = max(1, int(HOP * rate))
+    n = int(win * rate)
+    step = max(1, int(HOP * rate))
     for it in range(iterations):
         fi = CubicSpline(t, f)(np.clip(ts, t[0], t[-1]))
-        fi[ts < t[0]] = f[0]; fi[ts > t[-1]] = f[-1]
+        fi[ts < t[0]] = f[0]
+        fi[ts > t[-1]] = f[-1]
         z = y[a:b] * np.exp(-2j * np.pi * np.cumsum(fi) / rate)
-        nfft = int(8 * rate / 1.)  # 0.125 Hz sampling of the baseband spectrum
+        nfft = int(8 * rate / 1.0)  # 0.125 Hz sampling of the baseband spectrum
         nfft = 1 << int(np.ceil(np.log2(max(nfft // 8, n))))
-        ff, tt, Z = signal.stft(z, rate, window='hann', nperseg=n, noverlap=n - step, nfft=nfft,
-                                return_onesided=False, boundary=None, padded=False)
-        ff = np.fft.fftshift(ff); P = np.abs(np.fft.fftshift(Z, axes=0)) ** 2
+        ff, tt, Z = signal.stft(
+            z,
+            rate,
+            window="hann",
+            nperseg=n,
+            noverlap=n - step,
+            nfft=nfft,
+            return_onesided=False,
+            boundary=None,
+            padded=False,
+        )
+        ff = np.fft.fftshift(ff)
+        P = np.abs(np.fft.fftshift(Z, axes=0)) ** 2
         tt = tt + ts[0]
         band = np.abs(ff) <= spans[min(it, len(spans) - 1)]
-        Pb = P[band]; fb = ff[band]
+        Pb = P[band]
+        fb = ff[band]
         j = np.argmax(Pb, axis=0)
-        jj = np.clip(j, 1, len(fb) - 2); cols = np.arange(Pb.shape[1])
-        la, lb, lc = (np.log(Pb[jj - 1, cols] + 1e-30), np.log(Pb[jj, cols] + 1e-30), np.log(Pb[jj + 1, cols] + 1e-30))
-        off = fb[jj] + (fb[1] - fb[0]) * np.clip(.5 * (la - lc) / (la - 2 * lb + lc - 1e-12), -.5, .5)
+        jj = np.clip(j, 1, len(fb) - 2)
+        cols = np.arange(Pb.shape[1])
+        la, lb, lc = (
+            np.log(Pb[jj - 1, cols] + 1e-30),
+            np.log(Pb[jj, cols] + 1e-30),
+            np.log(Pb[jj + 1, cols] + 1e-30),
+        )
+        off = fb[jj] + (fb[1] - fb[0]) * np.clip(
+            0.5 * (la - lc) / (la - 2 * lb + lc - 1e-12), -0.5, 0.5
+        )
         contrast = Pb[j, cols] / np.maximum(np.median(Pb, axis=0), 1e-30)
-        w = (contrast > 6.).astype(float)
-        sig = max(1., .25 / (tt[1] - tt[0]) if len(tt) > 1 else 1.)
-        num = ndimage.gaussian_filter1d(off * w, sig); den = ndimage.gaussian_filter1d(w, sig)
-        corr = np.where(den > .3, num / np.maximum(den, 1e-9), 0.)
+        w = (contrast > 6.0).astype(float)
+        sig = max(1.0, 0.25 / (tt[1] - tt[0]) if len(tt) > 1 else 1.0)
+        num = ndimage.gaussian_filter1d(off * w, sig)
+        den = ndimage.gaussian_filter1d(w, sig)
+        corr = np.where(den > 0.3, num / np.maximum(den, 1e-9), 0.0)
         f = f + np.interp(t, tt, corr)
     # final per-sample quality: fraction of local baseband power within +-3 Hz
     fi = CubicSpline(t, f)(np.clip(ts, t[0], t[-1]))
     z = y[a:b] * np.exp(-2j * np.pi * np.cumsum(fi) / rate)
-    ff, tt, Z = signal.stft(z, rate, window='hann', nperseg=n, noverlap=n - step, nfft=max(n, 2048),
-                            return_onesided=False, boundary=None, padded=False)
-    P = np.abs(Z) ** 2; near = np.abs(ff) <= 3.; wide = np.abs(ff) <= 30.
+    ff, tt, Z = signal.stft(
+        z,
+        rate,
+        window="hann",
+        nperseg=n,
+        noverlap=n - step,
+        nfft=max(n, 2048),
+        return_onesided=False,
+        boundary=None,
+        padded=False,
+    )
+    P = np.abs(Z) ** 2
+    near = np.abs(ff) <= 3.0
+    wide = np.abs(ff) <= 30.0
     q = P[near].sum(0) / np.maximum(P[wide].sum(0), 1e-30)
     half = _intrinsic_halfwidth(z, rate, q)
     return f, np.interp(t, tt + ts[0], q), half
 
 
-def _continue(C, t, f, grid, ff, floor=7., max_s=12.):
+def _continue(C, t, f, grid, ff, floor=7.0, max_s=12.0):
     """Continuation of an accepted core along its own ridge in the contrast
     view C (approach / recede plateaus): the slope relaxes toward a plateau and
     the gate scales with it. The fused max-of-windows view sits near 4 dB on
@@ -262,69 +362,81 @@ def _continue(C, t, f, grid, ff, floor=7., max_s=12.):
     # the first/last samples of a path are its least reliable (turning hooks)
     if len(grid) > 24:
         grid, ff = grid[4:-4], ff[4:-4]
-    j0 = int(round((grid[0] - t[0]) / HOP)); j1 = int(round((grid[-1] - t[0]) / HOP))
+    j0 = int(round((grid[0] - t[0]) / HOP))
+    j1 = int(round((grid[-1] - t[0]) / HOP))
     n = min(8, len(ff) - 1)
     ends = {}
-    for direction, j, fc, slope in ((-1, j0, ff[0], (ff[n] - ff[0]) / (n * HOP)),
-                                    (1, j1, ff[-1], (ff[-1] - ff[-1 - n]) / (n * HOP))):
-        pts = []; recent = []
+    for direction, j, fc, slope in (
+        (-1, j0, ff[0], (ff[n] - ff[0]) / (n * HOP)),
+        (1, j1, ff[-1], (ff[-1] - ff[-1 - n]) / (n * HOP)),
+    ):
+        pts = []
+        recent = []
         for _ in range(int(max_s / HOP)):
             j += direction
             if j < 0 or j >= C.shape[1]:
                 break
-            slope *= .97
+            slope *= 0.97
             # a pass core can turn sharply at its ends (the pre-CPA hook):
             # try the current, a flat and the reversed slope
             best = None
-            for trial in (slope, 0., -slope):
+            for trial in (slope, 0.0, -slope):
                 pred = fc + trial * HOP * direction
-                tol = 6. + .05 * abs(trial)
-                lo = max(0, int((pred - tol - f[0]) / df)); hi = min(len(f), int((pred + tol - f[0]) / df) + 2)
+                tol = 6.0 + 0.05 * abs(trial)
+                lo = max(0, int((pred - tol - f[0]) / df))
+                hi = min(len(f), int((pred + tol - f[0]) / df) + 2)
                 if hi - lo < 2:
                     continue
-                score = C[lo:hi, j] - 4. * abs(f[lo:hi] - pred) / tol
+                score = C[lo:hi, j] - 4.0 * abs(f[lo:hi] - pred) / tol
                 k = lo + int(np.argmax(score))
-                if best is None or score[k - lo] > best[0] + .5:
+                if best is None or score[k - lo] > best[0] + 0.5:
                     best = (score[k - lo], k, trial, pred)
             if best is None:
                 break
-            _, k, trial, pred = best; value = float(C[k, j])
+            _, k, trial, pred = best
+            value = float(C[k, j])
             if value >= floor:
-                slope = .7 * trial + .3 * (f[k] - fc) / (HOP * direction); fc = f[k]
+                slope = 0.7 * trial + 0.3 * (f[k] - fc) / (HOP * direction)
+                fc = f[k]
             else:
                 fc = pred
-            recent.append(value); pts.append((t[j], fc))
+            recent.append(value)
+            pts.append((t[j], fc))
             if len(recent) >= 8 and np.mean(recent[-8:]) < floor:
                 del pts[-8:]
                 break
         ends[direction] = pts
-    before = ends[-1][::-1]; after = ends[1]
+    before = ends[-1][::-1]
+    after = ends[1]
     tt = np.r_[[p[0] for p in before], grid, [p[0] for p in after]]
     fq = np.r_[[p[1] for p in before], ff, [p[1] for p in after]]
     if len(tt) > len(grid):
-        sm = ndimage.median_filter(fq, 5, mode='nearest')
+        sm = ndimage.median_filter(fq, 5, mode="nearest")
         fq = np.where((tt < grid[0]) | (tt > grid[-1]), sm, fq)
     return tt, fq
 
 
-def _split_at_kinks(p, jump=6.):
+def _split_at_kinks(p, jump=6.0):
     """A path that fails as a whole may join two sweeps across a kink (a step
     in engine power, a short dropout). Split where a frame-to-frame step departs
     from the local step trend by >= `jump` Hz, so each piece is judged alone."""
-    ff = np.asarray(p['f']); j = np.asarray(p['j'])
+    ff = np.asarray(p["f"])
+    j = np.asarray(p["j"])
     if len(ff) < 8:
         return []
     step = np.diff(ff) / np.maximum(np.diff(j), 1)
-    trend = ndimage.median_filter(step, 9, mode='nearest')
+    trend = ndimage.median_filter(step, 9, mode="nearest")
     cuts = np.flatnonzero(abs(step - trend) >= jump) + 1
     out = []
     for part in np.split(np.arange(len(ff)), cuts):
         if len(part) >= 16:
-            out.append({k: [p[k][i] for i in part] for k in ('j', 'f', 'c', 's')})
+            out.append({k: [p[k][i] for i in part] for k in ("j", "f", "c", "s")})
     return out if len(out) > 1 else []
 
 
-def detect_chirps(x, sr, cfg: DetectConfig = DetectConfig(), fmin=150., min_dur=3., min_rate=12., thr=5.):
+def detect_chirps(
+    x, sr, cfg: DetectConfig = DetectConfig(), fmin=150.0, min_dur=3.0, min_rate=12.0, thr=5.0
+):
     """Steep, smooth single-tone sweeps as 'doppler' Tracks on a 0.25 s grid."""
     x = np.asarray(x, np.float64)
     if x.ndim == 2:
@@ -335,7 +447,7 @@ def detect_chirps(x, sr, cfg: DetectConfig = DetectConfig(), fmin=150., min_dur=
     y = signal.resample_poly(x, rate // g, int(sr) // g)
     dur = len(y) / rate
     out = []
-    starts = np.arange(0., max(dur - OVERLAP_S, 1e-9), CHUNK_S - OVERLAP_S)
+    starts = np.arange(0.0, max(dur - OVERLAP_S, 1e-9), CHUNK_S - OVERLAP_S)
     for s0 in starts:
         a, b = int(s0 * rate), int(min(dur, s0 + CHUNK_S) * rate)
         if b - a < int(min_dur * 2 * rate):
@@ -345,7 +457,9 @@ def detect_chirps(x, sr, cfg: DetectConfig = DetectConfig(), fmin=150., min_dur=
         C = np.max(views, axis=0)
         A, S = _oriented(C, f[1] - f[0])
         for whole in _track(A, S, t, f, thr):
-            pieces = [whole] if _accept(whole, C, t, f, min_dur, min_rate) else _split_at_kinks(whole)
+            pieces = (
+                [whole] if _accept(whole, C, t, f, min_dur, min_rate) else _split_at_kinks(whole)
+            )
             for p in pieces:
                 r = _accept(p, C, t, f, min_dur, min_rate)
                 if r is None:
@@ -355,9 +469,9 @@ def detect_chirps(x, sr, cfg: DetectConfig = DetectConfig(), fmin=150., min_dur=
                 # the remover's +-3 Hz envelope band, even when every sample is exact
                 grid, ff = _continue(C, t, f, grid, ff)
                 ff, quality, half = refine_dechirp(y, rate, grid, ff)
-                tr = Track(grid.copy(), ff, np.zeros(len(grid)), .8, None, 1, -1, 'doppler')
+                tr = Track(grid.copy(), ff, np.zeros(len(grid)), 0.8, None, 1, -1, "doppler")
                 if np.isfinite(half):
-                    tr.width_hz = float(np.clip(half, 1., 12.))
+                    tr.width_hz = float(np.clip(half, 1.0, 12.0))
                 tr._chirp = dict(contrast=contrast, z=z, locked=float(np.median(quality)))
                 out.append(tr)
     # chunk overlaps: drop duplicates
@@ -367,10 +481,11 @@ def detect_chirps(x, sr, cfg: DetectConfig = DetectConfig(), fmin=150., min_dur=
         dup = False
         for k in kept:
             lo, hi = max(q.t0, k.t0), min(q.t1, k.t1)
-            if hi - lo >= .5 * (q.t1 - q.t0):
-                g2 = np.arange(lo, hi + 1e-9, .25)
+            if hi - lo >= 0.5 * (q.t1 - q.t0):
+                g2 = np.arange(lo, hi + 1e-9, 0.25)
                 if np.median(abs(np.interp(g2, q.t, q.f) - np.interp(g2, k.t, k.f))) < 6:
-                    dup = True; break
+                    dup = True
+                    break
         if not dup:
             kept.append(q)
     return kept

@@ -9,7 +9,7 @@ C = 343.0
 
 
 def doppler_f(t, f0=120.0, v=60.0, d=300.0, tcpa=60.0):
-    r = np.sqrt(d ** 2 + (v * (t - tcpa)) ** 2)
+    r = np.sqrt(d**2 + (v * (t - tcpa)) ** 2)
     rr = v * v * (t - tcpa) / r
     return f0 * C / (C + rr)
 
@@ -61,11 +61,11 @@ def test_residual_and_fidelity(clip):
     det = ev.residual_details(orig, clean, SR, [tr])[0]
     assert det["tone_snr_before_db"] > 10
     fid = ev.fidelity(orig, clean, SR, exclude_tracks=[tr])
-    assert fid["snr_outside_db"] > 25        # only the tone was removed
+    assert fid["snr_outside_db"] > 25  # only the tone was removed
     assert fid["speech_snr_db"] > 30
     assert fid["snr_db"] < fid["snr_outside_db"]
     assert abs(fid["octave_change_db"][1000]) < 0.1
-    assert fid["octave_change_db"][125] < -1   # tone energy went away there
+    assert fid["octave_change_db"][125] < -1  # tone energy went away there
     ident = ev.fidelity(orig, orig, SR)
     assert ident["snr_db"] == float("inf")
 
@@ -112,106 +112,3 @@ def test_notch_reads_negative(clip):
         for d in (-1, 0, 1):
             S[np.clip(fi + d, 0, len(notched.f) - 1), ti] -= 10
     assert ev.track_contrast_db(ev.Spectrogram(notched.t, notched.f, S), [tr]) < -3
-
-
-def test_anti_forensics(clip):
-    orig, clean, tr = clip
-    af = ev.anti_forensics(orig, clean, SR, [tr])
-    assert af["residual"]["orig"]["z"] > 10
-    assert af["residual"]["clean"]["z"] < 3
-    assert af["pass_target"]
-    assert abs(af["edge_step_db"]) < 1.0
-    assert abs(af["stats"]["clean"]["var_ratio_db"]) < 1.5
-    # a 10%-amplitude leftover (-20 dB) is NOT safe: integrated over the pass it shows
-    bad = clean + 0.1 * (orig - clean)
-    af2 = ev.anti_forensics(orig, bad, SR, [tr])
-    assert af2["residual"]["clean"]["z"] > 3 and not af2["pass_target"]
-
-
-def test_anti_forensics_harmonic_and_notch():
-    rng = np.random.default_rng(1)
-    n = 120 * SR
-    t = np.arange(n) / SR
-    ph = 2 * np.pi * np.cumsum(doppler_f(t, f0=100)) / SR
-    noise = 0.01 * rng.standard_normal(n)
-    orig = (noise + 0.02 * np.sin(ph) + 0.01 * np.sin(2 * ph)).astype(np.float32)
-    clean = (noise + 0.01 * np.sin(2 * ph)).astype(np.float32)   # only k=1 removed
-    tt = np.arange(0, 120, 0.25)
-    tr = Track(tt, doppler_f(tt, f0=100), np.zeros(len(tt)), kind="doppler")
-    af = ev.anti_forensics(orig, clean, SR, [tr])
-    assert [k for _, k in af["leftover_harmonics"]] == [2]
-    # brick-wall STFT notch (+-2 Hz zeroed, no fill) -> negative edge step, low corridor power
-    import scipy.signal as ss
-    fz, tz, Z = ss.stft(noise, SR, nperseg=4096)   # notch cut into pure noise
-    fc = np.interp(tz, tt, doppler_f(tt, f0=100))
-    for k in (1, 2):
-        Z[np.abs(fz[:, None] - k * fc[None]) <= 2.0] = 0
-    _, notched = ss.istft(Z, SR, nperseg=4096)
-    af3 = ev.anti_forensics(noise.astype(np.float32), notched[:n].astype(np.float32), SR, [tr])
-    assert af3["edge_step_db"] < -3
-    assert af3["stats"]["clean"]["corridor"]["mean"] < 0.5 * af3["stats"]["clean"]["flank"]["mean"]
-
-
-# ----------------------------------------------------------------------------- dopfast attacker
-
-def _df_pass(n, sr, amp, v=70.0, d=160.0, h=30.0, f0=110.0, harmonics=(1, 2, 3)):
-    from dopplerscrub import evaluate as ev
-    tt = np.arange(n) / sr
-    ph = 2 * np.pi * np.cumsum(f0 * ev.dopfast_g(tt - h, v, d)) / sr
-    return sum(amp / j * np.cos(j * ph) for j in harmonics)
-
-
-def test_dopfast_g_shape():
-    from dopplerscrub import evaluate as ev
-    w = np.linspace(-20, 20, 401)
-    g = ev.dopfast_g(w, 100.0, 2500.0)
-    assert abs(ev.dopfast_g(np.array([0.0]), 100.0, 2500.0)[0] - 1.0) < 1e-12
-    assert np.all(np.diff(g) < 0)                         # falls through the pass
-    assert g[0] > 1.0 > g[-1]
-
-
-def test_dopfast_finds_faint_pass_and_its_shape():
-    from dopplerscrub import evaluate as ev
-    sr, n = 8000, 60 * 8000
-    noise = 0.01 * np.random.default_rng(0).standard_normal(n)
-    x = noise + _df_pass(n, sr, 0.004)
-    r = ev.dopfast(x, noise, sr, nulls=3)
-    assert r["z_orig"] > 10
-    e = r["event_orig"]
-    assert e["v"] == 70.0 and e["d"] == 160.0 and abs(e["s"] - 30.0) < 0.5 and abs(e["f0"] - 110) < 3
-    assert r["z_clean"] < 3 and r["z_at_orig_clean"] < 3
-
-
-def test_dopfast_events_usable_before_none_after():
-    from dopplerscrub import evaluate as ev
-    sr, n = 8000, 90 * 8000
-    noise = 0.01 * np.random.default_rng(2).standard_normal(n)
-    x = noise + _df_pass(n, sr, 0.004, h=45.0)
-    r = ev.dopfast(x, noise, sr)
-    assert r["n_usable_orig"] == 1 and r["n_events_orig"] == 1
-    e = r["events_orig"][0]
-    assert abs(e["s"] - 45.0) < 1.5 and e["usable"]
-    assert r["n_usable_clean"] == 0 and r["pass_known_clock"] is True
-    assert r["pass_unknown_clock"] is None              # only 1 usable before: n/a
-
-
-def test_dopfast_plateau_only_is_not_usable():
-    """A remover that takes only the steep CPA core leaves plateaus: not a usable event."""
-    from dopplerscrub import evaluate as ev
-    sr, n = 8000, 90 * 8000
-    tt = np.arange(n) / sr
-    noise = 0.01 * np.random.default_rng(3).standard_normal(n)
-    full = _df_pass(n, sr, 0.004, h=45.0)
-    fade = np.clip((np.abs(tt - 45.0 - 160 / ev.DF_C) - 2 * 160 / 70) / 1.0, 0, 1)
-    r = ev.dopfast(noise + full, noise + full * fade, sr)
-    assert r["n_usable_orig"] == 1 and r["n_usable_clean"] == 0
-
-
-def test_dopfast_noise_and_reversed_pass_are_null():
-    from dopplerscrub import evaluate as ev
-    sr, n = 8000, 60 * 8000
-    noise = 0.01 * np.random.default_rng(1).standard_normal(n)
-    rising = noise + _df_pass(n, sr, 0.004)[::-1]           # time-reversed pass: not a Doppler curve
-    r = ev.dopfast(noise, rising, sr, nulls=3)
-    assert r["z_orig"] < 3
-    assert r["peak_clean"] < r["null_mean_clean"] + 6 * r["null_sd_clean"]

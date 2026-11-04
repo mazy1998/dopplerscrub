@@ -52,6 +52,7 @@ Per-track width: a track may carry ``width_hz`` (half-width of its measured
 Tracks whose ``kind`` is not in ``cfg.remove_kinds`` are ignored.
 ``Track.amp`` is not used; the envelope is estimated from the signal.
 """
+
 from __future__ import annotations
 
 import warnings
@@ -66,15 +67,16 @@ from scipy.signal import butter, istft, resample_poly, sosfiltfilt, sosfreqz, st
 
 from .types import RemoveConfig, Track
 
-ENV_RATE = 100.0          # Hz, decimated rate of the complex envelope
+ENV_RATE = 100.0  # Hz, decimated rate of the complex envelope
 RS_WINDOW = ("kaiser", 10.0)  # polyphase resampling window (deep image rejection)
-EXTRAP_TAU = 1.0          # s, decay constant of the end-slope extrapolation
-EXTRAP_MAX_HZ = 2.0       # extrapolated f(t) never moves more than this off the end value
-REFINE = True             # local frequency refinement before the final demod (subtract, vk)
+EXTRAP_TAU = 1.0  # s, decay constant of the end-slope extrapolation
+EXTRAP_MAX_HZ = 2.0  # extrapolated f(t) never moves more than this off the end value
+REFINE = True  # local frequency refinement before the final demod (subtract, vk)
 REFINE_SNR = (10.0, 100.0)  # tone/background power ratio: refinement trust ramps 0 -> 1
 
 
 # ----------------------------------------------------------------------------- helpers
+
 
 def _clean_track(tr: Track):
     t = np.asarray(tr.t, float).ravel()
@@ -102,7 +104,7 @@ def _end_slope(t, f, at_end: bool) -> float:
     return float(np.polyfit(tt, ff, 1)[0])
 
 
-_CURVES: dict = {}           # (id(t), id(f)) -> (t, f, spline, s0, s1); cleared per _run
+_CURVES: dict = {}  # (id(t), id(f)) -> (t, f, spline, s0, s1); cleared per _run
 
 
 def _curve_parts(t, f):
@@ -134,12 +136,14 @@ def _freq_curve(t, f, tq):
     # never run far off the detected span (wrong/steep fits): |shift| <= EXTRAP_MAX_HZ
     if lo.any():
         d = t0 - tq[lo]
-        out[lo] = f[0] - np.clip(s0 * EXTRAP_TAU * (1 - np.exp(-d / EXTRAP_TAU)),
-                                 -EXTRAP_MAX_HZ, EXTRAP_MAX_HZ)
+        out[lo] = f[0] - np.clip(
+            s0 * EXTRAP_TAU * (1 - np.exp(-d / EXTRAP_TAU)), -EXTRAP_MAX_HZ, EXTRAP_MAX_HZ
+        )
     if hi.any():
         d = tq[hi] - t1
-        out[hi] = f[-1] + np.clip(s1 * EXTRAP_TAU * (1 - np.exp(-d / EXTRAP_TAU)),
-                                  -EXTRAP_MAX_HZ, EXTRAP_MAX_HZ)
+        out[hi] = f[-1] + np.clip(
+            s1 * EXTRAP_TAU * (1 - np.exp(-d / EXTRAP_TAU)), -EXTRAP_MAX_HZ, EXTRAP_MAX_HZ
+        )
     return out
 
 
@@ -167,8 +171,9 @@ def _env_bandwidth(t, f) -> float:
     dt = tt[1] - tt[0] if len(tt) > 1 else 1.0
     slope = np.abs(np.gradient(ff, dt))
     curv = np.abs(np.gradient(np.gradient(ff, dt), dt))
-    return float(np.clip(1.0 + 0.25 * np.percentile(slope, 95) + 0.5 * np.percentile(curv, 95),
-                         1.0, 3.0))
+    return float(
+        np.clip(1.0 + 0.25 * np.percentile(slope, 95) + 0.5 * np.percentile(curv, 95), 1.0, 3.0)
+    )
 
 
 def _lowpass_env(z: np.ndarray, sr: int, bw: float, pre=None):
@@ -183,8 +188,9 @@ def _lowpass_env(z: np.ndarray, sr: int, bw: float, pre=None):
     if zd.shape[0] > 15:
         sos = butter(4, min(bw, 0.45 * fs_d) / (fs_d / 2), output="sos")
         padlen = min(zd.shape[0] - 1, int(3 * fs_d / max(bw, 0.1)))
-        zd = sosfiltfilt(sos, zd.real, axis=0, padlen=padlen) + \
-            1j * sosfiltfilt(sos, zd.imag, axis=0, padlen=padlen)
+        zd = sosfiltfilt(sos, zd.real, axis=0, padlen=padlen) + 1j * sosfiltfilt(
+            sos, zd.imag, axis=0, padlen=padlen
+        )
     return zd, D, start
 
 
@@ -229,14 +235,14 @@ def _phase_correction(z: np.ndarray, sr: int, bw: float, weight: np.ndarray | No
     smooth = max(1, int(fs_d * 1.0))
     p_tone = uniform_filter1d((np.abs(zd) ** 2).sum(1), smooth, mode="nearest")
     p_wide = uniform_filter1d((np.abs(wide) ** 2).sum(1), smooth, mode="nearest")
-    dens = np.maximum(p_wide - p_tone, 1e-30) / fs_d          # per-Hz background
+    dens = np.maximum(p_wide - p_tone, 1e-30) / fs_d  # per-Hz background
     snr = p_tone / (dens * 4 * bw) - 1.0
     lo, hi = REFINE_SNR
     conf = np.clip((snr - lo) / (hi - lo), 0.0, 1.0)
     if weight is not None:
         conf = conf * weight[np.minimum(st + D * np.arange(k), n - 1)]
     comb = zd.sum(axis=1)
-    dph = np.angle(comb[1:] * np.conj(comb[:-1]))               # wrapped phase increments
+    dph = np.angle(comb[1:] * np.conj(comb[:-1]))  # wrapped phase increments
     df = np.clip(dph * fs_d / (2 * np.pi), -bw, bw) * np.minimum(conf[1:], conf[:-1])
     df = uniform_filter1d(df, max(1, int(fs_d * 0.25)), mode="nearest")
     ph = np.concatenate([[0.0], np.cumsum(df) * 2 * np.pi / fs_d])
@@ -253,8 +259,9 @@ def _upsample_env(zd, D, start, n):
         return cs(np.arange(n))
     out = np.empty((n, zd.shape[1]), complex)
     for c in range(zd.shape[1]):
-        out[:, c] = np.interp(np.arange(n), idx, zd[:, c].real) + \
-            1j * np.interp(np.arange(n), idx, zd[:, c].imag)
+        out[:, c] = np.interp(np.arange(n), idx, zd[:, c].real) + 1j * np.interp(
+            np.arange(n), idx, zd[:, c].imag
+        )
     return out
 
 
@@ -267,23 +274,24 @@ def _span(t, pad, sr, n):
 @dataclass(eq=False)
 class _Item:
     """One selected track: cleaned (t, f), detector confidence, per-track stats."""
+
     t: np.ndarray
     f: np.ndarray
     score: float
     strength: float
-    index: int                                   # position in the caller's list
+    index: int  # position in the caller's list
     stats: dict = field(default_factory=dict)
-    fill: tuple | None = None                    # (times, per-Hz level) of a harden fill
-    width: float = 2.0                           # corridor half-width (Hz) for this track
-    wide: bool = False                           # width_hz measured > cfg.width_hz (skirt step)
-    skirt: tuple | None = None                   # (times, extent Hz) of the skirt zone
+    fill: tuple | None = None  # (times, per-Hz level) of a harden fill
+    width: float = 2.0  # corridor half-width (Hz) for this track
+    wide: bool = False  # width_hz measured > cfg.width_hz (skirt step)
+    skirt: tuple | None = None  # (times, extent Hz) of the skirt zone
 
     @property
     def tf(self):
         return self.t, self.f
 
 
-WIDTH_MAX_HZ = 20.0       # cap on a per-track width_hz (flanks must fit the ~100 Hz baseband)
+WIDTH_MAX_HZ = 20.0  # cap on a per-track width_hz (flanks must fit the ~100 Hz baseband)
 
 
 def _track_width(tr, cfg) -> float:
@@ -312,16 +320,24 @@ def _select(tracks, cfg, sr) -> list[_Item]:
             continue
         a = np.asarray(tr.amp, float)
         strength = float(np.nanmean(a)) if a.size and np.isfinite(a).any() else 0.0
-        out.append(_Item(t, np.clip(f, 1.0, sr / 2 - 1.0), float(tr.doppler_score or 0.0),
-                         strength, i, width=_track_width(tr, cfg),
-                         wide=_track_width(tr, cfg) > cfg.width_hz + 1e-9))
+        out.append(
+            _Item(
+                t,
+                np.clip(f, 1.0, sr / 2 - 1.0),
+                float(tr.doppler_score or 0.0),
+                strength,
+                i,
+                width=_track_width(tr, cfg),
+                wide=_track_width(tr, cfg) > cfg.width_hz + 1e-9,
+            )
+        )
     out.sort(key=lambda it: (-it.score, -(it.t[-1] - it.t[0])))
     out = _dedupe(out)
-    out.sort(key=lambda it: -it.strength)        # strongest first (sequential methods)
+    out.sort(key=lambda it: -it.strength)  # strongest first (sequential methods)
     return out
 
 
-DEDUPE_HZ = 1.0           # tracks closer than this over most of their overlap are one tone
+DEDUPE_HZ = 1.0  # tracks closer than this over most of their overlap are one tone
 
 
 def _dedupe(items: list[_Item]) -> list[_Item]:
@@ -342,7 +358,10 @@ def _dedupe(items: list[_Item]) -> list[_Item]:
             if float(np.min(k.f)) > imx or float(np.max(k.f)) < imn:
                 continue
             tq = np.linspace(lo, hi, max(4, int((hi - lo) * 2)))
-            if np.median(np.abs(_freq_curve(it.t, it.f, tq) - _freq_curve(k.t, k.f, tq))) < DEDUPE_HZ:
+            if (
+                np.median(np.abs(_freq_curve(it.t, it.f, tq) - _freq_curve(k.t, k.f, tq)))
+                < DEDUPE_HZ
+            ):
                 dup = True
                 break
         if not dup:
@@ -352,34 +371,34 @@ def _dedupe(items: list[_Item]) -> list[_Item]:
 
 # ----------------------------------------------------------------------------- baseband tools
 
-FILL_EDGE_HZ = 0.75       # raised-cosine transition of the corridor filter
-FILL_FLANK_HZ = 8.0       # flanking bands reach out to +-8 Hz from f(t)
-FILL_SUB_HZ = 1.0         # flank sub-band width
-FILL_GAP_HZ = 1.0         # gap between corridor edge and the first flank (estimator skirts)
-FILL_MIN_FLANK_HZ = 6.0   # flank width per side, at least (>= 12 bins for the median)
-FILL_FRAME_S = 0.25       # level/envelope tracking time constant (attacker hop)
-FILL_LONG_S = 2.0         # time scale of the robust (quantile) level
-FILL_QUANTILE = 35.0      # robust low quantile (mask method's flank estimate) ...
-FILL_Q_CAL = 1.30         # ... times this = the mean for pure noise (calibrated: q35 ~ 0.77 mean)
-FILL_MED_CAL = 1.31       # median-of-sub-bands -> mean (calibrated below; ~1/ln 2 for raw powers)
-CROSS_DB = 8.0            # corridor this far above the flank level = crossing partial
-CROSS_MAX_S = 1.5         # ... but only for brief excursions (residual tones persist)
+FILL_EDGE_HZ = 0.75  # raised-cosine transition of the corridor filter
+FILL_FLANK_HZ = 8.0  # flanking bands reach out to +-8 Hz from f(t)
+FILL_SUB_HZ = 1.0  # flank sub-band width
+FILL_GAP_HZ = 1.0  # gap between corridor edge and the first flank (estimator skirts)
+FILL_MIN_FLANK_HZ = 6.0  # flank width per side, at least (>= 12 bins for the median)
+FILL_FRAME_S = 0.25  # level/envelope tracking time constant (attacker hop)
+FILL_LONG_S = 2.0  # time scale of the robust (quantile) level
+FILL_QUANTILE = 35.0  # robust low quantile (mask method's flank estimate) ...
+FILL_Q_CAL = 1.30  # ... times this = the mean for pure noise (calibrated: q35 ~ 0.77 mean)
+FILL_MED_CAL = 1.31  # median-of-sub-bands -> mean (calibrated below; ~1/ln 2 for raw powers)
+CROSS_DB = 8.0  # corridor this far above the flank level = crossing partial
+CROSS_MAX_S = 1.5  # ... but only for brief excursions (residual tones persist)
 # A track with a measured width_hz > cfg.width_hz gets NO crossing-partial keep: its
 # corridor IS the jittery target, whose bursts sit 10-20 dB over the (skirt-scaled)
 # flanks and would be read as crossings. Cost: a partial crossing a <= +-12 Hz core
 # is filled for <= CROSS_MAX_S.
-COH_SMOOTH_S = 1.5        # coherence decision time scale
-COH_ENV = (1.8, 3.5)      # envelope power / expected noise power: subtract nothing .. all
-COH_CORR = (1.6, 2.6)     # same for the whole corridor (method-agnostic gate)
-COH_MIN_S = 2.0           # coherent episodes shorter than this are foreground crossings
-DNH_LIMIT_DB = 0.2        # do-no-harm: corridor energy may not rise more than this
+COH_SMOOTH_S = 1.5  # coherence decision time scale
+COH_ENV = (1.8, 3.5)  # envelope power / expected noise power: subtract nothing .. all
+COH_CORR = (1.6, 2.6)  # same for the whole corridor (method-agnostic gate)
+COH_MIN_S = 2.0  # coherent episodes shorter than this are foreground crossings
+DNH_LIMIT_DB = 0.2  # do-no-harm: corridor energy may not rise more than this
 DNH_BLOCKS_S = (0.25, 0.75)  # ... on every one of these block scales
-DNH_VALLEY_DB = 3.0       # fill <= input corridor's own ~2 s level + this (no painting valleys)
+DNH_VALLEY_DB = 3.0  # fill <= input corridor's own ~2 s level + this (no painting valleys)
 DNH_VALLEY_SHORT_DB = 6.0  # ... and <= its ~0.25 s level + this
 DNH_FILL_MARGIN_DB = (3.0, 1.5)  # per scale: natural fluctuation allowed to a noise fill
-                                 # above max(input, flank level). (A strict per-block
-                                 # "fill <= input" keeps only low draws: a ~2 dB notch.)
-SAFE_EDGE_HZ = 1.0        # transition of the do-no-harm corridor
+# above max(input, flank level). (A strict per-block
+# "fill <= input" keeps only low draws: a ~2 dB notch.)
+SAFE_EDGE_HZ = 1.0  # transition of the do-no-harm corridor
 
 
 class _BB:
@@ -390,7 +409,7 @@ class _BB:
     def __init__(self, z: np.ndarray, fs: float, boxcar: bool = False):
         m = z.shape[0]
         P = min(m - 1, int(4 * fs)) if m > 1 else 0
-        zp = np.concatenate([z[P:0:-1], z, z[-2:-P - 2:-1]], axis=0) if P > 0 else z
+        zp = np.concatenate([z[P:0:-1], z, z[-2 : -P - 2 : -1]], axis=0) if P > 0 else z
         self.m, self.P, self.fs, self.L = m, P, fs, zp.shape[0]
         self.z, self.boxcar = z, boxcar
         self.F = np.fft.fftfreq(self.L, 1 / fs)
@@ -398,15 +417,16 @@ class _BB:
         self.droop = np.maximum(np.sinc(self.F / fs) ** 3, 1e-3) if boxcar else np.ones(self.L)
 
     def filt(self, mask: np.ndarray) -> np.ndarray:
-        return np.fft.ifft((mask / self.droop)[:, None] * self.Z, axis=0)[self.P:self.P + self.m]
+        return np.fft.ifft((mask / self.droop)[:, None] * self.Z, axis=0)[self.P : self.P + self.m]
 
     def corridor(self, W: float, E: float) -> np.ndarray:
         aF = np.abs(self.F)
-        return np.where(aF <= W, 1.0,
-                        np.where(aF < W + E, 0.5 + 0.5 * np.cos(np.pi * (aF - W) / E), 0.0))
+        return np.where(
+            aF <= W, 1.0, np.where(aF < W + E, 0.5 + 0.5 * np.cos(np.pi * (aF - W) / E), 0.0)
+        )
 
     def noise_bw(self, mask: np.ndarray) -> float:
-        return float(np.sum(mask ** 2) * self.fs / self.L)
+        return float(np.sum(mask**2) * self.fs / self.L)
 
 
 def _gsm_nan(v: np.ndarray, n: int) -> np.ndarray:
@@ -443,9 +463,9 @@ def _flank_density(bb: _BB, W: float, E: float, others_off, nf: int):
     frames = np.lib.stride_tricks.sliding_window_view(zp, nper, axis=0)[centers]  # (T, ch, nper)
     X = np.fft.fft(frames * win, axis=-1)
     fr = np.fft.fftfreq(nper, 1 / fs)
-    norm = np.full(nper, fs * np.sum(win ** 2))
+    norm = np.full(nper, fs * np.sum(win**2))
     if bb.boxcar:
-        norm = norm * np.maximum(np.sinc(fr / fs) ** 6, 1e-6)          # boxcar^3 power droop
+        norm = norm * np.maximum(np.sinc(fr / fs) ** 6, 1e-6)  # boxcar^3 power droop
     afr = np.abs(fr)
     lo0 = W + E + FILL_GAP_HZ
     # at least FILL_MIN_FLANK_HZ per side, however wide the corridor: the median
@@ -453,6 +473,7 @@ def _flank_density(bb: _BB, W: float, E: float, others_off, nf: int):
     flank = (afr >= lo0) & (afr <= max(FILL_FLANK_HZ + 1.0, lo0 + FILL_MIN_FLANK_HZ))
     if not flank.any():
         return np.zeros((m, ch, ch), complex), np.zeros(m)
+
     def usable(sel):
         ok_ = np.ones((len(centers), int(sel.sum())), bool)
         ffl_ = fr[sel]
@@ -468,8 +489,8 @@ def _flank_density(bb: _BB, W: float, E: float, others_off, nf: int):
             warnings.simplefilter("ignore", RuntimeWarning)
             return np.nanmedian(np.where(ok_, P_, np.nan), axis=1)
 
-    Xf = X[:, :, flank]                                                # (T, ch, K)
-    P, ok = usable(flank)                                              # (T, K) per-Hz trace
+    Xf = X[:, :, flank]  # (T, ch, K)
+    P, ok = usable(flank)  # (T, K) per-Hz trace
     lev_f = med(P, ok)
     # other tracks' corridors can cover every flank bin (a line detected many
     # times, a dense comb): widen the flanks for those frames, and failing that
@@ -491,7 +512,7 @@ def _flank_density(bb: _BB, W: float, E: float, others_off, nf: int):
     if ch == 1:
         return level[:, None, None].astype(complex), level
     # coherence structure from non-excluded, non-tonal flank bins, smoothed ~2 s
-    with warnings.catch_warnings():                  # frames with every bin excluded
+    with warnings.catch_warnings():  # frames with every bin excluded
         warnings.simplefilter("ignore", RuntimeWarning)
         med = np.nanmedian(np.where(ok, P, np.nan), axis=1)
     use = ok & (P <= 4 * np.nan_to_num(med)[:, None] + 1e-30)
@@ -510,8 +531,15 @@ def _near(items, i, pad, df_hz=15.0):
     it = items[i]
     lo, hi = it.t[0] - pad, it.t[-1] + pad
     fmn, fmx = float(np.min(it.f)) - df_hz, float(np.max(it.f)) + df_hz
-    return [o.tf for j, o in enumerate(items) if j != i and o.t[-1] + pad >= lo and o.t[0] - pad <= hi
-            and float(np.max(o.f)) >= fmn and float(np.min(o.f)) <= fmx]
+    return [
+        o.tf
+        for j, o in enumerate(items)
+        if j != i
+        and o.t[-1] + pad >= lo
+        and o.t[0] - pad <= hi
+        and float(np.max(o.f)) >= fmn
+        and float(np.min(o.f)) <= fmx
+    ]
 
 
 def _others_offsets(item_f, others, tq, pad):
@@ -529,7 +557,9 @@ def _others_offsets(item_f, others, tq, pad):
     return out
 
 
-def _ramp_gate(ratio: np.ndarray, lo_hi, n_erode: int, n_smooth: int, n_min_open: int = 0) -> np.ndarray:
+def _ramp_gate(
+    ratio: np.ndarray, lo_hi, n_erode: int, n_smooth: int, n_min_open: int = 0
+) -> np.ndarray:
     """0..1 weight from a power ratio: 0 below lo, 1 above hi. Open episodes
     shorter than n_min_open samples are discarded (a Doppler tone persists; a
     brief coherent episode is a speech/music partial crossing the corridor).
@@ -538,7 +568,7 @@ def _ramp_gate(ratio: np.ndarray, lo_hi, n_erode: int, n_smooth: int, n_min_open
     g = np.clip((ratio - lo) / (hi - lo), 0.0, 1.0)
     if n_min_open > 1:
         g[_short_runs(g > 0.5, n_min_open - 1)] = 0.0
-        g[g <= 0.5] = np.minimum(g[g <= 0.5], 0.0)   # no partial opening outside episodes
+        g[g <= 0.5] = np.minimum(g[g <= 0.5], 0.0)  # no partial opening outside episodes
     g = minimum_filter1d(g, max(1, n_erode), mode="nearest")
     return np.clip(_gsmooth(g, n_smooth), 0.0, 1.0)
 
@@ -560,8 +590,10 @@ def _pad_continuity(gate: np.ndarray, tq: np.ndarray, t0: float, t1: float) -> n
     was coherent at the adjacent end of the span: the extrapolated f(t) must not
     'discover' an unrelated stationary partial (e.g. a music note) to subtract."""
     g = gate.copy()
-    for side, sel_pad, sel_in in ((0, tq < t0, (tq >= t0) & (tq <= t0 + 0.5)),
-                                  (1, tq > t1, (tq <= t1) & (tq >= t1 - 0.5))):
+    for side, sel_pad, sel_in in (
+        (0, tq < t0, (tq >= t0) & (tq <= t0 + 0.5)),
+        (1, tq > t1, (tq <= t1) & (tq >= t1 - 0.5)),
+    ):
         if sel_pad.any():
             lim = float(gate[sel_in].min()) if sel_in.any() else 0.0
             g[sel_pad] = np.minimum(g[sel_pad], lim)
@@ -570,14 +602,22 @@ def _pad_continuity(gate: np.ndarray, tq: np.ndarray, t0: float, t1: float) -> n
 
 # ----------------------------------------------------------------------------- subtract
 
+
 def _butter_enbw(bw: float, fs_d: float) -> float:
     sos = butter(4, min(bw, 0.45 * fs_d) / (fs_d / 2), output="sos")
     w, h = sosfreqz(sos, worN=8192, fs=fs_d)
-    return float(2 * np.trapezoid(np.abs(h) ** 4, w))      # zero-phase: |H|^2, power |H|^4
+    return float(2 * np.trapezoid(np.abs(h) ** 4, w))  # zero-phase: |H|^2, power |H|^4
 
 
-def _subtract_one(y: np.ndarray, sr: int, item: _Item, pad: float, refine: bool = True,
-                  others=(), width_hz: float = 2.0):
+def _subtract_one(
+    y: np.ndarray,
+    sr: int,
+    item: _Item,
+    pad: float,
+    refine: bool = True,
+    others=(),
+    width_hz: float = 2.0,
+):
     """Subtract one tracked tone from y (n, ch) in place, only where its
     estimated envelope is coherent (a tone is really there)."""
     t, f = item.tf
@@ -606,12 +646,20 @@ def _subtract_one(y: np.ndarray, sr: int, item: _Item, pad: float, refine: bool 
     # (c) coherence gate against the flank noise level
     td = tq[np.minimum(st + D * np.arange(zd.shape[0]), len(tq) - 1)]
     bb = _BB(pre[0], fs_d, boxcar=True)
-    _, level = _flank_density(bb, width_hz, FILL_EDGE_HZ, _others_offsets((t, f), others, td, pad),
-                              max(1, int(FILL_FRAME_S * fs_d)))
+    _, level = _flank_density(
+        bb,
+        width_hz,
+        FILL_EDGE_HZ,
+        _others_offsets((t, f), others, td, pad),
+        max(1, int(FILL_FRAME_S * fs_d)),
+    )
     gate, _ = _coherence(zd, level, ch, _butter_enbw(bw, fs_d), fs_d)
     gate = _pad_continuity(gate, td, t[0], t[-1])
-    item.stats["coherent_frac"] = float(gate[(td >= t[0]) & (td <= t[-1])].mean()) \
-        if ((td >= t[0]) & (td <= t[-1])).any() else 0.0
+    item.stats["coherent_frac"] = (
+        float(gate[(td >= t[0]) & (td <= t[-1])].mean())
+        if ((td >= t[0]) & (td <= t[-1])).any()
+        else 0.0
+    )
     if gate.max() < 1e-3:
         return
     env = _upsample_env(zd * gate[:, None], D, st, b - a)
@@ -620,6 +668,7 @@ def _subtract_one(y: np.ndarray, sr: int, item: _Item, pad: float, refine: bool 
 
 
 # ----------------------------------------------------------------------------- low band
+
 
 def _work_rate(sr: int, fmax: float) -> int:
     """Decimated rate for low-band processing. fmax must sit below 0.65*Nyquist,
@@ -637,8 +686,10 @@ def _resampler(sr: int, fw: int):
     up, down = r.numerator, r.denominator
     if (up, down) == (1, 1):
         return (lambda v: v.copy()), (lambda v: v)
-    return (lambda v: resample_poly(v, up, down, axis=0, window=RS_WINDOW),
-            lambda v: resample_poly(v, down, up, axis=0, window=RS_WINDOW))
+    return (
+        lambda v: resample_poly(v, up, down, axis=0, window=RS_WINDOW),
+        lambda v: resample_poly(v, down, up, axis=0, window=RS_WINDOW),
+    )
 
 
 def _groups(items, pad, extra):
@@ -688,8 +739,8 @@ def _gsmooth(v: np.ndarray, n: int) -> np.ndarray:
     return gaussian_filter1d(v, max(n, 1) / 2.0, axis=0, mode="nearest", truncate=4.0)
 
 
-
 # ----------------------------------------------------------------------------- mask (STFT notch)
+
 
 def _mask_segment(y, sr, items, cfg):
     """STFT-domain time-varying notch for a group of overlapping tracks. Only the
@@ -700,7 +751,7 @@ def _mask_segment(y, sr, items, cfg):
     fmax = max(float(np.max(f)) for _, f in items) + cfg.width_hz + 10.0
     fw = _work_rate(sr, fmax)
     down_fn, up_fn = _resampler(sr, fw)
-    nper = int(2 ** np.round(np.log2(fw * 1.0)))      # ~1 s window, ~1 Hz bins
+    nper = int(2 ** np.round(np.log2(fw * 1.0)))  # ~1 s window, ~1 Hz bins
     hop = nper // 4
     margin = (2 * nper / fw) + 0.5
     a = max(0, int((min(t[0] for t, _ in items) - pad - margin) * sr))
@@ -710,8 +761,16 @@ def _mask_segment(y, sr, items, cfg):
     seg = y[a:b].astype(np.float64)
     low = down_fn(seg)
     m = low.shape[0]
-    fr, tt, S = stft(low, fs=fw, window="hann", nperseg=nper, noverlap=nper - hop,
-                     axis=0, boundary="even", padded=True)      # (nf, ch, nt)
+    fr, tt, S = stft(
+        low,
+        fs=fw,
+        window="hann",
+        nperseg=nper,
+        noverlap=nper - hop,
+        axis=0,
+        boundary="even",
+        padded=True,
+    )  # (nf, ch, nt)
     tt_abs = tt + a / sr
     df = fr[1] - fr[0]
     win_s = nper / fw
@@ -733,20 +792,28 @@ def _mask_segment(y, sr, items, cfg):
             pin = np.nanmean(np.where(inner, P, np.nan), axis=0)
             pfl = np.nanpercentile(np.where(flank, P, np.nan), FILL_QUANTILE, axis=0) * FILL_Q_CAL
         ratio = np.nan_to_num(pin / np.maximum(pfl, 1e-30))
-        gate = _ramp_gate(ratio, COH_CORR, max(1, int(0.5 / (hop / fw))), 1,
-                          int(COH_MIN_S / (hop / fw)))
+        gate = _ramp_gate(
+            ratio, COH_CORR, max(1, int(0.5 / (hop / fw))), 1, int(COH_MIN_S / (hop / fw))
+        )
         C = np.maximum(C, taper * (w * gate)[None, :])
     if not C.any():
         return
-    _, d_low = istft(C[:, None, :] * S, fs=fw, window="hann", nperseg=nper,
-                     noverlap=nper - hop, time_axis=-1, freq_axis=0, boundary=True)
+    _, d_low = istft(
+        C[:, None, :] * S,
+        fs=fw,
+        window="hann",
+        nperseg=nper,
+        noverlap=nper - hop,
+        time_axis=-1,
+        freq_axis=0,
+        boundary=True,
+    )
     d_low = np.moveaxis(d_low, -1, 0)[:m]
     d = up_fn(d_low)
     L = b - a
     if d.shape[0] < L:
         d = np.concatenate([d, np.zeros((L - d.shape[0], d.shape[1]))], axis=0)
     y[a:b] = seg - d[:L]
-
 
 
 def _vk_components(items: list[_Item], pad):
@@ -760,6 +827,7 @@ def _vk_components(items: list[_Item], pad):
             parent[i] = parent[parent[i]]
             i = parent[i]
         return i
+
     fmn = [float(np.min(it.f)) for it in items]
     fmx = [float(np.max(it.f)) for it in items]
     for i in range(K):
@@ -780,12 +848,13 @@ def _vk_components(items: list[_Item], pad):
         if len(c) <= VK_MAX_K:
             out.append(c)
             continue
-        c = sorted(c, key=lambda i: float(np.mean(items[i].f)))   # neighbours in frequency together
-        out.extend(c[j:j + VK_MAX_K] for j in range(0, len(c), VK_MAX_K))
+        c = sorted(c, key=lambda i: float(np.mean(items[i].f)))  # neighbours in frequency together
+        out.extend(c[j : j + VK_MAX_K] for j in range(0, len(c), VK_MAX_K))
     return out
 
 
 # ----------------------------------------------------------------------------- harden (fill)
+
 
 def _harden_one(y, sr, item: _Item, cfg, rng, extra_hz: float = 0.0, others=()):
     """Replace the +-width_hz corridor around one track with track-locked noise
@@ -827,13 +896,14 @@ def _harden_one(y, sr, item: _Item, cfg, rng, extra_hz: float = 0.0, others=()):
     bb = _BB(zd, fs_d, boxcar=True)
     W = item.width + extra_hz
     H = bb.corridor(W, FILL_EDGE_HZ)
-    keep = np.sqrt(np.clip(1 - H ** 2, 0, 1))
+    keep = np.sqrt(np.clip(1 - H**2, 0, 1))
     removed = bb.filt(1 - keep)
     corridor = bb.filt(H)
     nf = max(1, int(round(FILL_FRAME_S * fs_d)))
     td = tq[np.minimum(st + D * np.arange(m), len(tq) - 1)]
-    dens, level = _flank_density(bb, W, FILL_EDGE_HZ,
-                                 _others_offsets((t, f), list(others), td, pad), nf)
+    dens, level = _flank_density(
+        bb, W, FILL_EDGE_HZ, _others_offsets((t, f), list(others), td, pad), nf
+    )
     # cross-check in ABSOLUTE frequency (what the attacker's fixed-frequency STFT
     # sees): for a steep track crossing stationary partials (a harmonic comb),
     # the warped-frame flanks are smeared by the crossings and overstate the
@@ -856,8 +926,7 @@ def _harden_one(y, sr, item: _Item, cfg, rng, extra_hz: float = 0.0, others=()):
         hot = (pc > pf * 10 ** (CROSS_DB / 10)) & (not item.wide)
     cross = _short_runs(hot, int(CROSS_MAX_S * fs_d))
     cross = np.clip(_gsmooth(cross.astype(float), 2 * nf) * 1.5, 0, 1)
-    gate = 1.0 - cross                                     # 0 = keep original
-
+    gate = 1.0 - cross  # 0 = keep original
 
     # noise: exactly white complex Gaussian (unit variance per sample = 1/fs_d per
     # Hz), shaped by the corridor filter H and coloured by chol(dens * fs_d). No
@@ -865,38 +934,38 @@ def _harden_one(y, sr, item: _Item, cfg, rng, extra_hz: float = 0.0, others=()):
     # all level dynamics come from the flanks' frame-level median (dens).
     L = bb.L
     g = (rng.standard_normal((L, ch)) + 1j * rng.standard_normal((L, ch))) / np.sqrt(2)
-    g = np.fft.ifft(H[:, None] * np.fft.fft(g, axis=0), axis=0)[bb.P:bb.P + m]
+    g = np.fft.ifft(H[:, None] * np.fft.fft(g, axis=0), axis=0)[bb.P : bb.P + m]
     dens = 0.5 * (dens + np.conj(np.swapaxes(dens, 1, 2))) * fs_d
     tr_d = np.real(np.einsum("mii->m", dens))
     try:
         Lc = np.linalg.cholesky(dens + (tr_d * 1e-6 + 1e-30)[:, None, None] * np.eye(ch))
-    except np.linalg.LinAlgError:                          # fall back: per-channel, uncorrelated
+    except np.linalg.LinAlgError:  # fall back: per-channel, uncorrelated
         Lc = np.sqrt(np.maximum(np.real(np.einsum("mii->mi", dens)), 0))[:, :, None] * np.eye(ch)
     noise = np.einsum("mij,mj->mi", Lc, g)
 
     R = _upsample_env(removed * gate[:, None], D, st, b - a)
     N = _upsample_env(noise * gate[:, None], D, st, b - a)
-    c = 1 - np.sqrt(np.clip(1 - w ** 2, 0, 1))            # power-complementary time fade
+    c = 1 - np.sqrt(np.clip(1 - w**2, 0, 1))  # power-complementary time fade
     y[a:b] = seg - 2.0 * np.real((c[:, None] * R - w[:, None] * N) * np.conj(carrier)[:, None])
     item.stats["filled"] = True
     item.stats["fill_gate_mean"] = float(np.mean(gate))
     item.stats["fill_hot_frac"] = float(np.mean(hot))
-    item.fill = (td, level * np.interp(td, tq, w) * gate)   # per-Hz fill level actually applied
+    item.fill = (td, level * np.interp(td, tq, w) * gate)  # per-Hz fill level actually applied
 
 
 # ----------------------------------------------------------------------------- skirt
 
-SKIRT_MAX_HZ = 50.0       # skirt zone never reaches further than this from f(t)
+SKIRT_MAX_HZ = 50.0  # skirt zone never reaches further than this from f(t)
 SKIRT_BG_HZ = (55.0, 80.0)  # far ring (offsets from f(t)) that defines the background
-SKIRT_RATE = 400          # complex baseband rate of the skirt step (Nyquist 200 Hz)
-SKIRT_NPER_S = 1.0        # STFT window (1 Hz bins) ...
-SKIRT_HOP_S = 0.125       # ... and hop
-SKIRT_MEET_DB = 1.0       # the skirt ends where the profile is within this of the background
-SKIRT_SMOOTH_S = 0.5      # time smoothing of the power used for the gain
-SKIRT_EDGE_HZ = 3.0       # outer taper of the skirt zone
-SKIRT_CORE_DB = 6.0       # a frame gets a skirt only if its core stands this far over background
-SKIRT_HARD_DB = 10.0      # shoulder this far over background is too strong for an STFT gain
-                          # (~20-25 dB dynamic range): the core fill is widened to cover it
+SKIRT_RATE = 400  # complex baseband rate of the skirt step (Nyquist 200 Hz)
+SKIRT_NPER_S = 1.0  # STFT window (1 Hz bins) ...
+SKIRT_HOP_S = 0.125  # ... and hop
+SKIRT_MEET_DB = 1.0  # the skirt ends where the profile is within this of the background
+SKIRT_SMOOTH_S = 0.5  # time smoothing of the power used for the gain
+SKIRT_EDGE_HZ = 3.0  # outer taper of the skirt zone
+SKIRT_CORE_DB = 6.0  # a frame gets a skirt only if its core stands this far over background
+SKIRT_HARD_DB = 10.0  # shoulder this far over background is too strong for an STFT gain
+# (~20-25 dB dynamic range): the core fill is widened to cover it
 
 
 def _skirt_one(y, sr, item: _Item, cfg, others=()):
@@ -934,12 +1003,22 @@ def _skirt_one(y, sr, item: _Item, cfg, others=()):
     up, down = r.numerator, r.denominator
     zb = resample_poly(seg * carrier[:, None], up, down, axis=0, window=RS_WINDOW)
     m, ch = zb.shape
-    nper = int(round(SKIRT_NPER_S * fv)); hop = int(round(SKIRT_HOP_S * fv))
+    nper = int(round(SKIRT_NPER_S * fv))
+    hop = int(round(SKIRT_HOP_S * fv))
     if m < 4 * nper:
         return
-    F, tt, X = stft(zb, fs=fv, window="hann", nperseg=nper, noverlap=nper - hop, axis=0,
-                    return_onesided=False, boundary="even", padded=True)      # (nf, ch, nt)
-    P = (np.abs(X) ** 2).sum(1)                                               # (nf, nt)
+    F, tt, X = stft(
+        zb,
+        fs=fv,
+        window="hann",
+        nperseg=nper,
+        noverlap=nper - hop,
+        axis=0,
+        return_onesided=False,
+        boundary="even",
+        padded=True,
+    )  # (nf, ch, nt)
+    P = (np.abs(X) ** 2).sum(1)  # (nf, nt)
     aF = np.abs(F)
     tl = a / sr + tt
     ring = (aF >= SKIRT_BG_HZ[0]) & (aF <= SKIRT_BG_HZ[1])
@@ -960,7 +1039,9 @@ def _skirt_one(y, sr, item: _Item, cfg, others=()):
     core = item.width + FILL_EDGE_HZ
     # per-frame extent from the side-averaged profile, running min outward
     offs = np.arange(int(np.ceil(core)), int(SKIRT_MAX_HZ) + 1)
-    prof = np.stack([0.5 * (Ps[np.argmin(np.abs(F - o))] + Ps[np.argmin(np.abs(F + o))]) for o in offs])
+    prof = np.stack(
+        [0.5 * (Ps[np.argmin(np.abs(F - o))] + Ps[np.argmin(np.abs(F + o))]) for o in offs]
+    )
     runmin = np.minimum.accumulate(prof, axis=0)
     meet = runmin <= bg[None, :] * 10 ** (SKIRT_MEET_DB / 10)
     pcore = Ps[aF <= core].mean(0)
@@ -980,17 +1061,26 @@ def _skirt_one(y, sr, item: _Item, cfg, others=()):
     ext = np.clip(_gsmooth(ext, max(1, int(round(0.5 / SKIRT_HOP_S)))), core, SKIRT_MAX_HZ)
     zone = np.clip((ext[None, :] + SKIRT_EDGE_HZ - aF[:, None]) / SKIRT_EDGE_HZ, 0, 1)
     zone = 0.5 - 0.5 * np.cos(np.pi * zone)
-    zone[aF <= core] = 0.0                                       # the core was filled already
+    zone[aF <= core] = 0.0  # the core was filled already
     oi = np.clip(np.round(aF - offs[0]).astype(int), 0, len(offs) - 1)
-    shoulder = runmin[oi]                                        # (nf, nt) envelope at |F|
+    shoulder = runmin[oi]  # (nf, nt) envelope at |F|
     g = np.sqrt(np.clip(bg[None, :] / np.maximum(shoulder, 1e-30), 0, 1))
-    g = 1 - zone * (1 - g)                                       # 1 outside the zone
-    tw = np.interp(tl, tq, w)                                    # track fade
+    g = 1 - zone * (1 - g)  # 1 outside the zone
+    tw = np.interp(tl, tq, w)  # track fade
     g = 1 - tw[None, :] * (1 - g)
     if np.all(g > 0.999):
         return
-    _, dz = istft((g - 1)[:, None, :] * X, fs=fv, window="hann", nperseg=nper, noverlap=nper - hop,
-                  time_axis=-1, freq_axis=0, input_onesided=False, boundary=True)
+    _, dz = istft(
+        (g - 1)[:, None, :] * X,
+        fs=fv,
+        window="hann",
+        nperseg=nper,
+        noverlap=nper - hop,
+        time_axis=-1,
+        freq_axis=0,
+        input_onesided=False,
+        boundary=True,
+    )
     dz = np.moveaxis(dz, -1, 0)[:m]
     if dz.shape[0] < m:
         dz = np.concatenate([dz, np.zeros((m - dz.shape[0], ch), complex)], axis=0)
@@ -1005,11 +1095,11 @@ def _skirt_one(y, sr, item: _Item, cfg, others=()):
 
 # ----------------------------------------------------------------------------- Vold-Kalman
 
-VK_ORDER = 3              # p: VK structural-equation order (2-3 recommended; 3 measured best)
-VK_COUPLE_HZ = 8.0        # tracks are solved jointly only if they come this close (~2x max bw)
-VK_MAX_K = 4              # larger components are split (joint-solve cost ~ K^3)
-VK_MAX_FV = 400           # coupled components needing a faster complex rate are split
-VK_CHUNK_S = 120.0        # long groups are solved in overlapping chunks
+VK_ORDER = 3  # p: VK structural-equation order (2-3 recommended; 3 measured best)
+VK_COUPLE_HZ = 8.0  # tracks are solved jointly only if they come this close (~2x max bw)
+VK_MAX_K = 4  # larger components are split (joint-solve cost ~ K^3)
+VK_MAX_FV = 400  # coupled components needing a faster complex rate are split
+VK_CHUNK_S = 120.0  # long groups are solved in overlapping chunks
 VK_OVERLAP_S = 10.0
 
 
@@ -1028,12 +1118,13 @@ def _dtd_from_coeffs(m, c):
         return diags
     for i in range(p + 1):
         for j in range(i, p + 1):
-            diags[j - i][i:i + rows] += c[i] * c[j]
+            diags[j - i][i : i + rows] += c[i] * c[j]
     return diags
 
 
 def _diff_coeffs(p):
     from math import comb
+
     return np.array([(-1) ** (p - i) * comb(p, i) for i in range(p + 1)], float)
 
 
@@ -1047,8 +1138,8 @@ def _vk_solve(low: np.ndarray, thetas, acts, r2s, p: int):
     K = len(thetas)
     N = m * K
     u = p * K
-    ab = np.zeros((u + 1, N), complex)                 # upper form: ab[u + i - j, j]
-    E = np.stack([a * np.exp(1j * th) for a, th in zip(acts, thetas)])   # (K, m)
+    ab = np.zeros((u + 1, N), complex)  # upper form: ab[u + i - j, j]
+    E = np.stack([a * np.exp(1j * th) for a, th in zip(acts, thetas)])  # (K, m)
     # coupling (same n): M[(n,k),(n,l)] = conj(E_k) E_l for l >= k
     for k in range(K):
         for l in range(k, K):
@@ -1071,11 +1162,10 @@ def _vk_solve(low: np.ndarray, thetas, acts, r2s, p: int):
     return x.reshape(m, K, ch).transpose(1, 0, 2)
 
 
-
 def _vk_enbw(r2: float, fv: float, p: int) -> float:
     fr = np.linspace(-fv / 2, fv / 2, 20001)
     h = 1.0 / (1.0 + r2 * (2 - 2 * np.cos(2 * np.pi * fr / fv)) ** p)
-    return float(np.trapezoid(h ** 2, fr))
+    return float(np.trapezoid(h**2, fr))
 
 
 def _vk_group(y, sr, items: list[_Item], cfg, refine=True, p=VK_ORDER, all_items=()):
@@ -1100,7 +1190,7 @@ def _vk_group(y, sr, items: list[_Item], cfg, refine=True, p=VK_ORDER, all_items
     while 0.65 * fv / 2 < bh and fv < sr:
         fv *= 2
     fv = min(fv, sr)
-    if fv > VK_MAX_FV and len(items) > 1:                  # too wide to couple: solve singly
+    if fv > VK_MAX_FV and len(items) > 1:  # too wide to couple: solve singly
         for it in items:
             _vk_group(y, sr, [it], cfg, refine, p, all_items)
         return
@@ -1116,12 +1206,16 @@ def _vk_group(y, sr, items: list[_Item], cfg, refine=True, p=VK_ORDER, all_items
     idx = np.minimum(np.round(np.arange(m) * sr / fv).astype(int), len(tseg) - 1)
     thetas, acts, fades, r2s, bws = [], [], [], [], []
     for k, it in enumerate(items):
-        th = (2 * np.pi * np.cumsum(fks[k] - fref) / sr)[idx]   # phase relative to the reference
+        th = (2 * np.pi * np.cumsum(fks[k] - fref) / sr)[idx]  # phase relative to the reference
         bw = _env_bandwidth(it.t, it.f)
         if refine:
             oth = [o.tf for o in items if o is not it]
-            corr = _phase_correction(zb * np.exp(-1j * th)[:, None], fv, bw,
-                                     _proximity_weight(it.t, it.f, oth, tl, bw, pad))
+            corr = _phase_correction(
+                zb * np.exp(-1j * th)[:, None],
+                fv,
+                bw,
+                _proximity_weight(it.t, it.f, oth, tl, bw, pad),
+            )
             if corr is not None:
                 th = th + corr
         thetas.append(th)
@@ -1138,13 +1232,13 @@ def _vk_group(y, sr, items: list[_Item], cfg, refine=True, p=VK_ORDER, all_items
             lo, hi = max(0, s0 - ov), min(m, e0 + ov)
             sl = slice(lo, hi)
             x = _vk_solve(zb[sl], [th[sl] for th in thetas], [ac[sl] for ac in acts], r2s, p)
-            X[:, s0:e0] = x[:, s0 - lo:e0 - lo]
+            X[:, s0:e0] = x[:, s0 - lo : e0 - lo]
             s0 = e0
     except np.linalg.LinAlgError:
         if len(items) > 1:
             for it in items:
                 _vk_group(y, sr, [it], cfg, refine, p, all_items)
-        return                                              # single track: do no harm, skip
+        return  # single track: do no harm, skip
     rem = np.zeros_like(zb)
     for k, it in enumerate(items):
         # (c) coherence of this track's envelope against its own flank noise
@@ -1152,9 +1246,13 @@ def _vk_group(y, sr, items: list[_Item], cfg, refine=True, p=VK_ORDER, all_items
         ai = list(all_items)
         pos = next((j for j, o in enumerate(ai) if o is it), None)
         oth = _near(ai, pos, pad) if pos is not None else []
-        _, level = _flank_density(_BB(zk, fv), it.width, FILL_EDGE_HZ,
-                                  _others_offsets(it.tf, oth, tl, pad),
-                                  max(1, int(FILL_FRAME_S * fv)))
+        _, level = _flank_density(
+            _BB(zk, fv),
+            it.width,
+            FILL_EDGE_HZ,
+            _others_offsets(it.tf, oth, tl, pad),
+            max(1, int(FILL_FRAME_S * fv)),
+        )
         gate, _ = _coherence(X[k], level, ch, _vk_enbw(r2s[k], fv, p), fv)
         gate = _pad_continuity(gate, tl, it.t[0], it.t[-1])
         span = (tl >= it.t[0]) & (tl <= it.t[-1])
@@ -1168,6 +1266,7 @@ def _vk_group(y, sr, items: list[_Item], cfg, refine=True, p=VK_ORDER, all_items
 
 
 # ----------------------------------------------------------------------------- do no harm
+
 
 def _safe_half_width(width_hz: float, extra_hz: float) -> float:
     return max(width_hz + FILL_EDGE_HZ + extra_hz, 3.5)
@@ -1198,7 +1297,7 @@ def _do_no_harm(x0, y, sr, item: _Item, cfg, confirmed: bool, half: float, other
     Ex_scales = []
     td = tq[np.minimum(st + D * np.arange(cx.shape[0]), len(tq) - 1)]
     fillE = None
-    if item.fill is not None:                       # expected fill energy in this corridor
+    if item.fill is not None:  # expected fill energy in this corridor
         fillE = np.interp(td, item.fill[0], item.fill[1], left=0, right=0) * bx.noise_bw(Hs)
     if fillE is not None:
         # a fill may not paint a corridor that was systematically quieter than its
@@ -1219,7 +1318,7 @@ def _do_no_harm(x0, y, sr, item: _Item, cfg, confirmed: bool, half: float, other
             Lm = np.maximum(Lm, np.maximum(Ex, _gsmooth(fillE, nb)) * 10 ** (margin / 10))
         bad = Ex + 2 * C + Ed > Lm
         if bad.any():
-            disc = np.sqrt(np.maximum(C ** 2 + Ed * (Lm - Ex), 0))
+            disc = np.sqrt(np.maximum(C**2 + Ed * (Lm - Ex), 0))
             a_s = np.ones(len(Ex))
             a_s[bad] = np.clip(((-C + disc) / np.maximum(Ed, 1e-30))[bad], 0, 1)
             alpha = np.minimum(alpha, a_s)
@@ -1227,16 +1326,21 @@ def _do_no_harm(x0, y, sr, item: _Item, cfg, confirmed: bool, half: float, other
     Ex, Ed = Ex_scales[-1]
     nb = max(1, int(DNH_BLOCKS_S[-1] * fs_d))
     if not confirmed:
-        _, level = _flank_density(bx, half, SAFE_EDGE_HZ,
-                                  _others_offsets((t, f), list(others), td, cfg.pad_s),
-                                  max(1, int(FILL_FRAME_S * fs_d)))
+        _, level = _flank_density(
+            bx,
+            half,
+            SAFE_EDGE_HZ,
+            _others_offsets((t, f), list(others), td, cfg.pad_s),
+            max(1, int(FILL_FRAME_S * fs_d)),
+        )
         ns = int(COH_SMOOTH_S * fs_d)
         ex_long = _gsmooth((np.abs(cx) ** 2).sum(1), ns)
         ratio = ex_long / np.maximum(_gsmooth(level, ns) * bx.noise_bw(Hs), 1e-30)
-        alpha = np.minimum(alpha, _ramp_gate(ratio, COH_CORR, int(0.5 * fs_d), 1,
-                                              int(COH_MIN_S * fs_d)))
-    alpha = minimum_filter1d(alpha, nb, mode="nearest")             # erode: conservative
-    alpha = np.clip(_gsmooth(alpha, nb // 2), 0, 1)                 # crossfade
+        alpha = np.minimum(
+            alpha, _ramp_gate(ratio, COH_CORR, int(0.5 * fs_d), 1, int(COH_MIN_S * fs_d))
+        )
+    alpha = minimum_filter1d(alpha, nb, mode="nearest")  # erode: conservative
+    alpha = np.clip(_gsmooth(alpha, nb // 2), 0, 1)  # crossfade
     item.stats["reverted_frac"] = float(np.mean(1 - alpha))
     if np.all(alpha > 0.9999):
         out_alpha = alpha
@@ -1246,7 +1350,7 @@ def _do_no_harm(x0, y, sr, item: _Item, cfg, confirmed: bool, half: float, other
         y[a:b] = y[a:b].astype(np.float64) - 2.0 * np.real(full * np.conj(carrier)[:, None])
         out_alpha = alpha
     td = tq[np.minimum(st + D * np.arange(len(Ex)), len(tq) - 1)]
-    mod = (out_alpha ** 2 * Ed) > 1e-3 * np.maximum(Ex, 1e-30)      # change above -30 dB
+    mod = (out_alpha**2 * Ed) > 1e-3 * np.maximum(Ex, 1e-30)  # change above -30 dB
     item.stats["modified_s"] = float(mod.sum() / fs_d)
     return td, mod, half
 
@@ -1298,9 +1402,9 @@ def _abs_flank_level(seg, sr, a, t, f, td, lo0):
     tc = (a + starts + nper / 2) / sr
     fc = _freq_curve(t, f, tc)
     lev = np.empty(len(starts))
-    norm = sr * np.sum(win ** 2) / 2.0           # one-sided rfft power -> two-sided per-Hz density
+    norm = sr * np.sum(win**2) / 2.0  # one-sided rfft power -> two-sided per-Hz density
     for k, s0 in enumerate(starts):
-        X = np.fft.rfft(seg[s0:s0 + nper] * win[:, None], axis=0)
+        X = np.fft.rfft(seg[s0 : s0 + nper] * win[:, None], axis=0)
         d = np.abs(fr - fc[k])
         sel = (d >= lo0) & (d <= lo0 + FILL_MIN_FLANK_HZ)
         if not sel.any():
@@ -1310,8 +1414,14 @@ def _abs_flank_level(seg, sr, a, t, f, td, lo0):
     return np.interp(td, tc, lev)
 
 
-def harden_tracks(x: np.ndarray, sr: int, tracks: list[Track], cfg: RemoveConfig = RemoveConfig(),
-                  seed: int = 0x5C2B, x_ref: np.ndarray | None = None):
+def harden_tracks(
+    x: np.ndarray,
+    sr: int,
+    tracks: list[Track],
+    cfg: RemoveConfig = RemoveConfig(),
+    seed: int = 0x5C2B,
+    x_ref: np.ndarray | None = None,
+):
     """Only the harden step (fill confirmed tracks' corridors with matched noise),
     with the same do-no-harm invariant. Same shape/dtype in and out.
 
@@ -1323,6 +1433,7 @@ def harden_tracks(x: np.ndarray, sr: int, tracks: list[Track], cfg: RemoveConfig
 
 
 # ----------------------------------------------------------------------------- public
+
 
 def _run(x, sr, tracks, cfg, steps, seed=0x5C2B, x_ref=None):
     _CURVES.clear()
@@ -1343,7 +1454,7 @@ def _run(x, sr, tracks, cfg, steps, seed=0x5C2B, x_ref=None):
     # only the DIFFERENCE is upsampled and added back, so untouched samples
     # (everything outside the corridors' time spans) stay bit-exact.
     fmax = max(float(np.max(it.f)) for it in items)
-    if any(it.wide for it in items):            # the skirt's background ring must be in-band
+    if any(it.wide for it in items):  # the skirt's background ring must be in-band
         fmax += SKIRT_BG_HZ[1] + 5.0 - 60.0
     fw = _lowband_rate(sr, fmax) if LOWBAND else sr
     ref = None
@@ -1359,8 +1470,9 @@ def _run(x, sr, tracks, cfg, steps, seed=0x5C2B, x_ref=None):
         def lowband(v):
             out = np.empty((-(-v.shape[0] * up // down), v.shape[1]))
             for o0, blk in _resample_blocks(v, up, down, sr):
-                out[o0:o0 + len(blk)] = blk
+                out[o0 : o0 + len(blk)] = blk
             return out
+
         xw = lowband(x0)
         yw = xw.copy()
         refw = lowband(ref) if ref is not None else xw
@@ -1376,15 +1488,16 @@ def _run(x, sr, tracks, cfg, steps, seed=0x5C2B, x_ref=None):
         if step == "subtract":
             for i, it in enumerate(items):
                 others = _near(items, i, cfg.pad_s)
-                _subtract_one(y, sr, it, cfg.pad_s, refine=REFINE, others=others,
-                              width_hz=it.width)
+                _subtract_one(y, sr, it, cfg.pad_s, refine=REFINE, others=others, width_hz=it.width)
         elif step == "mask":
             # the STFT notch widens with the sweep inside its ~1 s window; for
             # steep tracks it would be a meaningless wide hole -> those use VK
             slow, steep = [], []
             for it in items:
                 tt = np.arange(it.t[0], it.t[-1] + 1e-9, 0.25)
-                sl = np.abs(np.gradient(_freq_curve(it.t, it.f, tt), 0.25)) if len(tt) > 2 else [0.0]
+                sl = (
+                    np.abs(np.gradient(_freq_curve(it.t, it.f, tt), 0.25)) if len(tt) > 2 else [0.0]
+                )
                 s95 = float(np.percentile(sl, 95))
                 if s95 <= MASK_MAX_SLOPE and it.width <= cfg.width_hz:
                     slow.append(it)
@@ -1394,12 +1507,14 @@ def _run(x, sr, tracks, cfg, steps, seed=0x5C2B, x_ref=None):
             for g in _groups([it.tf for it in slow], cfg.pad_s, 3.0):
                 _mask_segment(y, sr, g, cfg)
             for comp in _vk_components(steep, cfg.pad_s):
-                _vk_group(y, sr, [steep[i] for i in comp], cfg, refine=REFINE, p=VK_ORDER,
-                          all_items=items)
+                _vk_group(
+                    y, sr, [steep[i] for i in comp], cfg, refine=REFINE, p=VK_ORDER, all_items=items
+                )
         elif step == "vk":
             for comp in _vk_components(items, cfg.pad_s):
-                _vk_group(y, sr, [items[i] for i in comp], cfg, refine=REFINE, p=VK_ORDER,
-                          all_items=items)
+                _vk_group(
+                    y, sr, [items[i] for i in comp], cfg, refine=REFINE, p=VK_ORDER, all_items=items
+                )
         elif step == "harden":
             rng = np.random.default_rng(seed)
             # measured-wide tracks: scale the skirt down to the far background FIRST,
@@ -1409,7 +1524,7 @@ def _run(x, sr, tracks, cfg, steps, seed=0x5C2B, x_ref=None):
                     _skirt_one(y, sr, it, cfg, _near(items, i, cfg.pad_s, df_hz=SKIRT_BG_HZ[1]))
             for i, it in enumerate(items):
                 if it.score < min_score:
-                    it.stats["filled"] = False         # not confirmed by the detector
+                    it.stats["filled"] = False  # not confirmed by the detector
                     continue
                 others = _near(items, i, cfg.pad_s)
                 _harden_one(y, sr, it, cfg, rng, extra_mask.get(id(it), 0.0), others)
@@ -1420,44 +1535,60 @@ def _run(x, sr, tracks, cfg, steps, seed=0x5C2B, x_ref=None):
         others = _near(items, i, cfg.pad_s)
         half = _safe_half_width(it.width, extra_mask.get(id(it), 0.0))
         rec = _do_no_harm(refw, y, sr, it, cfg, it.score >= min_score, half, others)
-        if rec is not None and it.skirt is not None:     # TF stats: count the skirt zone too
+        if rec is not None and it.skirt is not None:  # TF stats: count the skirt zone too
             rec = (rec[0], rec[1], max(rec[2], float(np.nanmax(it.skirt[1]))))
         records.append(rec)
     frac, frac_band = _tf_fraction(records, items, x0.shape[0], sr)
-    if sr < sr_full:                                   # back to the full rate: add the difference
+    if sr < sr_full:  # back to the full rate: add the difference
         d = y - x0
         nz = np.flatnonzero(np.any(d != 0, axis=1))
         y = x_full.astype(dtype, copy=True)
         if len(nz):
             M = 64
-            a_l = max(0, int(nz[0]) - M) // up * up        # start on an integer full-rate sample
+            a_l = max(0, int(nz[0]) - M) // up * up  # start on an integer full-rate sample
             b_l = min(d.shape[0], int(nz[-1]) + 1 + M)
             a = int(round(a_l * sr_full / sr))
-            for o0, dup in _resample_blocks(d[a_l:b_l], down, up, sr):   # back up, blockwise
+            for o0, dup in _resample_blocks(d[a_l:b_l], down, up, sr):  # back up, blockwise
                 L = min(dup.shape[0], y.shape[0] - a - o0)
                 if L <= 0:
                     break
-                blk = y[a + o0:a + o0 + L]
+                blk = y[a + o0 : a + o0 + L]
                 touched = np.any(dup[:L] != 0, axis=1)
                 if touched.any():
-                    blk[touched] = (blk[touched].astype(np.float64) + dup[:L][touched]).astype(dtype)
+                    blk[touched] = (blk[touched].astype(np.float64) + dup[:L][touched]).astype(
+                        dtype
+                    )
         sr = sr_full
-    stats = {"tf_fraction": frac, "tf_fraction_40_1000": frac_band, "notes": [],
-             "tracks": [dict(index=it.index, t0=float(it.t[0]), t1=float(it.t[-1]),
-                             f_mean=float(np.mean(it.f)), score=it.score, **it.stats)
-                        for it in sorted(items, key=lambda it: it.index)]}
+    stats = {
+        "tf_fraction": frac,
+        "tf_fraction_40_1000": frac_band,
+        "notes": [],
+        "tracks": [
+            dict(
+                index=it.index,
+                t0=float(it.t[0]),
+                t1=float(it.t[-1]),
+                f_mean=float(np.mean(it.f)),
+                score=it.score,
+                **it.stats,
+            )
+            for it in sorted(items, key=lambda it: it.index)
+        ],
+    }
     if frac_band > MAX_TF_FRACTION:
-        msg = (f"removal modified {100 * frac_band:.1f}% of the 40-1000 Hz time-frequency area "
-               f"(> {100 * MAX_TF_FRACTION:.0f}%): many tracks, check the detector output")
+        msg = (
+            f"removal modified {100 * frac_band:.1f}% of the 40-1000 Hz time-frequency area "
+            f"(> {100 * MAX_TF_FRACTION:.0f}%): many tracks, check the detector output"
+        )
         stats["notes"].append(msg)
         warnings.warn(msg, stacklevel=3)
     return (y[:, 0] if mono else y), stats
 
 
-LOWBAND = True            # process on a decimated low band (see _run)
+LOWBAND = True  # process on a decimated low band (see _run)
 
 
-RS_BLOCK_S = 30.0         # chunk length for full-file resampling (bounded memory)
+RS_BLOCK_S = 30.0  # chunk length for full-file resampling (bounded memory)
 
 
 def _resample_blocks(v: np.ndarray, up: int, down: int, sr_in: float):
@@ -1468,15 +1599,15 @@ def _resample_blocks(v: np.ndarray, up: int, down: int, sr_in: float):
     Memory stays O(block) instead of a full-length float64 copy."""
     n = v.shape[0]
     n_out = -(-n * up // down)
-    B = max(down, int(RS_BLOCK_S * sr_in) // down * down)       # input block, multiple of down
-    half = 10 * max(up, down)                                    # resample_poly's half-length (upsampled domain)
-    P = (-(-half // up) // down + 2) * down                      # input overlap, multiple of down
+    B = max(down, int(RS_BLOCK_S * sr_in) // down * down)  # input block, multiple of down
+    half = 10 * max(up, down)  # resample_poly's half-length (upsampled domain)
+    P = (-(-half // up) // down + 2) * down  # input overlap, multiple of down
     for s0 in range(0, n, B):
         a, b = max(0, s0 - P), min(n, s0 + B + P)
         piece = resample_poly(v[a:b].astype(np.float64), up, down, axis=0, window=RS_WINDOW)
         o0, o1 = s0 * up // down, min(n_out, (s0 + B) * up // down)
         off = o0 - a * up // down
-        yield o0, piece[off:off + (o1 - o0)]
+        yield o0, piece[off : off + (o1 - o0)]
 
 
 def _lowband_rate(sr: int, fmax: float) -> int:
@@ -1490,12 +1621,17 @@ def _lowband_rate(sr: int, fmax: float) -> int:
     return sr
 
 
-MASK_MAX_SLOPE = 6.0      # Hz/s: steeper tracks are handled by VK when method="mask"
-MAX_TF_FRACTION = 0.10    # warn when more than 10% of the 40-1000 Hz TF area is modified
+MASK_MAX_SLOPE = 6.0  # Hz/s: steeper tracks are handled by VK when method="mask"
+MAX_TF_FRACTION = 0.10  # warn when more than 10% of the 40-1000 Hz TF area is modified
 
 
-def remove_tracks(x: np.ndarray, sr: int, tracks: list[Track], cfg: RemoveConfig = RemoveConfig(),
-                  return_stats: bool = False):
+def remove_tracks(
+    x: np.ndarray,
+    sr: int,
+    tracks: list[Track],
+    cfg: RemoveConfig = RemoveConfig(),
+    return_stats: bool = False,
+):
     """Remove the tracked tones from x (shape (n,) or (n, ch)) with cfg.method
     ("vk" | "subtract" | "mask"), then, if cfg.harden, fill each confirmed
     track's corridor with matched noise. A final do-no-harm pass guarantees that

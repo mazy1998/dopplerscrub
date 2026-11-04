@@ -1,7 +1,7 @@
 [project]
 name = "dopplerscrub"
 version = "0.1.0"
-description = "Privacy filter that finds and removes aircraft/vehicle Doppler tones from audio and video so recordings cannot be geolocated against ADS-B flight tracks"
+description = "Removes propeller-aircraft Doppler tones from audio and video so recordings cannot be geolocated against ADS-B flight tracks"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
@@ -31,3 +31,6 @@ dev = [
 
 [tool.pytest.ini_options]
 markers = ["slow: long-running tests (real recordings, full datasets)"]
+
+[tool.ruff]
+line-length = 100

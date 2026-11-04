@@ -22,6 +22,7 @@ harmless per-stream ``language`` and ``handler_name`` tags are carried over
 Audio streams that were not given cleaned audio are DROPPED (with a warning)
 rather than copied, because they would still contain the Doppler tones.
 """
+
 from __future__ import annotations
 
 import json
@@ -111,8 +112,19 @@ def probe(path) -> dict:
     tags, attached_pic.
     """
     path = str(path)
-    p = _run([FFPROBE, "-v", "error", "-print_format", "json", "-show_format",
-              "-show_streams", "-show_chapters", path])
+    p = _run(
+        [
+            FFPROBE,
+            "-v",
+            "error",
+            "-print_format",
+            "json",
+            "-show_format",
+            "-show_streams",
+            "-show_chapters",
+            path,
+        ]
+    )
     info = json.loads(p.stdout or b"{}")
     fmt = info.get("format", {})
     audio, video, subs, other = [], [], [], []
@@ -129,10 +141,14 @@ def probe(path) -> dict:
             "attached_pic": attached,
         }
         if ctype == "audio":
-            d.update(sample_rate=_int(s.get("sample_rate")), channels=_int(s.get("channels")),
-                     channel_layout=s.get("channel_layout"), sample_fmt=s.get("sample_fmt"),
-                     bits_per_raw_sample=_int(s.get("bits_per_raw_sample")),
-                     bits_per_sample=_int(s.get("bits_per_sample")))
+            d.update(
+                sample_rate=_int(s.get("sample_rate")),
+                channels=_int(s.get("channels")),
+                channel_layout=s.get("channel_layout"),
+                sample_fmt=s.get("sample_fmt"),
+                bits_per_raw_sample=_int(s.get("bits_per_raw_sample")),
+                bits_per_sample=_int(s.get("bits_per_sample")),
+            )
             audio.append(d)
         elif ctype == "video":
             d.update(width=s.get("width"), height=s.get("height"))
@@ -162,8 +178,21 @@ def probe(path) -> dict:
 
 
 def _decode(path: str, a_idx: int, channels: int, sr: int | None) -> np.ndarray:
-    cmd = [FFMPEG, "-nostdin", "-v", "error", "-i", path, "-map", f"0:a:{a_idx}",
-           "-vn", "-sn", "-dn", "-ac", str(channels)]
+    cmd = [
+        FFMPEG,
+        "-nostdin",
+        "-v",
+        "error",
+        "-i",
+        path,
+        "-map",
+        f"0:a:{a_idx}",
+        "-vn",
+        "-sn",
+        "-dn",
+        "-ac",
+        str(channels),
+    ]
     if sr:
         cmd += ["-ar", str(sr)]
     cmd += ["-f", "f32le", "-c:a", "pcm_f32le", "-"]
@@ -182,9 +211,12 @@ def load(path, sr: int | None = None, stream: int = 0):
     if not meta["audio_streams"]:
         raise ValueError(f"{path}: no audio stream")
     if len(meta["audio_streams"]) > 1 and stream == 0:
-        warnings.warn(f"{path}: {len(meta['audio_streams'])} audio streams; load() returns the "
-                      "first. Use load_all() and pass a list to save() to clean all of them "
-                      "(otherwise save() drops the extra streams).", stacklevel=2)
+        warnings.warn(
+            f"{path}: {len(meta['audio_streams'])} audio streams; load() returns the "
+            "first. Use load_all() and pass a list to save() to clean all of them "
+            "(otherwise save() drops the extra streams).",
+            stacklevel=2,
+        )
     a = meta["audio_streams"][stream]
     ch = a["channels"] or 1
     out_sr = int(sr or a["sample_rate"] or 48000)
@@ -247,19 +279,27 @@ def _audio_codec_args(src: dict | None, ext: str, sr: int, out_idx: int) -> list
     return args
 
 
-KEEP_STREAM_TAGS = ("language", "handler_name")   # harmless; everything else is stripped
+KEEP_STREAM_TAGS = ("language", "handler_name")  # harmless; everything else is stripped
 _STRUCTURAL = {"major_brand", "minor_version", "compatible_brands", "encoder", "vendor_id"}
 _LOCATION_RE = re.compile(r"location|iso6709|gps|xyz|latitude|longitude|altitude", re.I)
 _COORD_RE = re.compile(r"[+-]\d{1,3}\.\d+[+-]\d{1,3}\.\d+")
-_BRAND_RE = re.compile(r"gopro|apple|iphone|ipad|samsung|galaxy|sony|canon|nikon|dji|osmo|"
-                       r"panasonic|lumix|google|pixel|huawei|xiaomi|oneplus|insta360|garmin|"
-                       r"fuji|olympus|blackmagic|zoom|tascam", re.I)
+_BRAND_RE = re.compile(
+    r"gopro|apple|iphone|ipad|samsung|galaxy|sony|canon|nikon|dji|osmo|"
+    r"panasonic|lumix|google|pixel|huawei|xiaomi|oneplus|insta360|garmin|"
+    r"fuji|olympus|blackmagic|zoom|tascam",
+    re.I,
+)
 
 
 def _harmless(key: str, value) -> bool:
     v = str(value)
-    return (len(v) <= 64 and v.isprintable() and not _COORD_RE.search(v)
-            and not _LOCATION_RE.search(v) and not (key == "handler_name" and _BRAND_RE.search(v)))
+    return (
+        len(v) <= 64
+        and v.isprintable()
+        and not _COORD_RE.search(v)
+        and not _LOCATION_RE.search(v)
+        and not (key == "handler_name" and _BRAND_RE.search(v))
+    )
 
 
 def sensitive_tags(meta: dict) -> dict:
@@ -275,13 +315,17 @@ def sensitive_tags(meta: dict) -> dict:
                 continue
             name = prefix + k
             (loc if (_LOCATION_RE.search(k) or _COORD_RE.search(str(v))) else other).append(name)
+
     scan(meta.get("tags"))
     for grp in ("video_streams", "audio_streams", "subtitle_streams", "other_streams"):
         for st in meta.get(grp, []):
             scan(st.get("tags"), f"stream{st.get('index')}:")
-    return {"location": sorted(set(loc)), "other": sorted(set(other)),
-            "chapters": int(meta.get("chapters") or 0),
-            "data_streams": [st.get("codec") or "?" for st in meta.get("other_streams", [])]}
+    return {
+        "location": sorted(set(loc)),
+        "other": sorted(set(other)),
+        "chapters": int(meta.get("chapters") or 0),
+        "data_streams": [st.get("codec") or "?" for st in meta.get("other_streams", [])],
+    }
 
 
 def _keep_tag_args(meta: dict, keep_visual: bool, subs_mapped: bool, n_audio: int) -> list[str]:
@@ -318,9 +362,12 @@ def save(src_path, dst_path, x, sr: int, meta: dict | None = None, strip_metadat
         xs, srs = [a for a, _ in xs], [int(b) for _, b in xs]
     n_src_audio = len(meta["audio_streams"])
     if n_src_audio > len(xs):
-        warnings.warn(f"{src_path}: {n_src_audio} audio streams but only {len(xs)} cleaned "
-                      f"array(s) given; dropping the {n_src_audio - len(xs)} uncleaned audio "
-                      "stream(s) so they cannot leak the tones.", stacklevel=2)
+        warnings.warn(
+            f"{src_path}: {n_src_audio} audio streams but only {len(xs)} cleaned "
+            f"array(s) given; dropping the {n_src_audio - len(xs)} uncleaned audio "
+            "stream(s) so they cannot leak the tones.",
+            stacklevel=2,
+        )
     ext = Path(dst_path).suffix.lower()
     has_video = bool(meta["has_video"])
 
@@ -337,8 +384,11 @@ def save(src_path, dst_path, x, sr: int, meta: dict | None = None, strip_metadat
             wp = os.path.join(tmpdir, f"a{i}.wav")
             sf.write(wp, np.asarray(xi, dtype=np.float32), int(si), subtype="FLOAT", format="WAV")
             cmd += ["-i", wp]
-        subs_mapped = bool(keep_visual and meta["subtitle_streams"]
-                           and ext in (".mkv", ".mp4", ".mov", ".m4v", ".webm"))
+        subs_mapped = bool(
+            keep_visual
+            and meta["subtitle_streams"]
+            and ext in (".mkv", ".mp4", ".mov", ".m4v", ".webm")
+        )
         if keep_visual:
             cmd += ["-map", "0:v?"]
             if subs_mapped:
@@ -348,7 +398,11 @@ def save(src_path, dst_path, x, sr: int, meta: dict | None = None, strip_metadat
         if keep_visual:
             cmd += ["-c:v", "copy"]
             subs = meta["subtitle_streams"]
-            if subs and ext in (".mp4", ".m4v", ".mov") and any(s["codec"] != "mov_text" for s in subs):
+            if (
+                subs
+                and ext in (".mp4", ".m4v", ".mov")
+                and any(s["codec"] != "mov_text" for s in subs)
+            ):
                 cmd += ["-c:s", "mov_text"]  # text subs in mp4/mov must be mov_text
             else:
                 cmd += ["-c:s", "copy"]
@@ -356,8 +410,16 @@ def save(src_path, dst_path, x, sr: int, meta: dict | None = None, strip_metadat
             src_a = meta["audio_streams"][i] if i < n_src_audio else None
             cmd += _audio_codec_args(src_a, ext, srs[i], i)
         if strip_metadata:
-            cmd += ["-map_metadata", "-1", "-map_chapters", "-1",
-                    "-fflags", "+bitexact", "-flags:a", "+bitexact"]
+            cmd += [
+                "-map_metadata",
+                "-1",
+                "-map_chapters",
+                "-1",
+                "-fflags",
+                "+bitexact",
+                "-flags:a",
+                "+bitexact",
+            ]
             cmd += _keep_tag_args(meta, keep_visual, subs_mapped, min(len(xs), n_src_audio))
         else:
             cmd += ["-map_metadata", "0"]
