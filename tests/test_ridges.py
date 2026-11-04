@@ -142,14 +142,14 @@ def test_audio_stack_missing_orders():
     sr=4800;tt=np.arange(sr*24)/sr
     base=90+10*np.sin(.23*tt)+.4*tt
     phase=2*np.pi*np.cumsum(base)/sr
-    # Orders 2 and 7 are absent. A solid observed h1 must still propose
-    # their continuous trajectories; removal applies its coherence gate.
+    # Orders 2 and 7 are absent. The latest diagnosis requires locally
+    # evidenced proposals, so missing orders must not create corridors.
     x=sum(.025/k*np.sin(k*phase) for k in range(1,13) if k not in (2,7))
     cfg=DetectConfig(fmax=1600)
     S,t,f=ridge_spectrogram(x,sr,cfg)
     tracks=track_ridges(S,t,f,cfg)
     moving=[tr for tr in tracks if tr.kind=='doppler']
-    for order in range(1,13):
+    for order in [k for k in range(1,13) if k not in (2,7)]:
         matches=[tr for tr in moving if tr.t1-tr.t0>10 and
                  np.median(abs(tr.f-order*np.interp(tr.t,tt,base)))<(4.1 if order>=8 else 3)]
         assert matches, f'missing order {order}'
@@ -220,7 +220,7 @@ def test_motion_rejects_flat_drift_and_accepts_pass():
     assert _moving(110+10*t/t[-1],cfg)
 
 
-def test_verified_track_does_not_remove_steady_prefix_or_tail():
+def test_confirmed_source_keeps_supported_approach_and_recede_plateaus():
     from dopplerscrub.ridges import _clip_verified
     from dopplerscrub.types import Track
     cfg=DetectConfig();t=np.arange(0,60,.25);f=np.arange(30,450,.5)
@@ -228,7 +228,7 @@ def test_verified_track_does_not_remove_steady_prefix_or_tail():
     S=18*np.exp(-.5*((f[:,None]-freq[None,:])/.8)**2)
     tr=Track(t,freq,np.full(len(t),.01),.95,harmonic=1,group=0,kind='doppler')
     out=_clip_verified([tr],S,t,f,cfg)
-    assert out and all(q.t0>=18 and q.t1<=42 for q in out)
+    assert out and min(q.t0 for q in out)==t[0] and max(q.t1 for q in out)==t[-1]
     assert all(q.t1-q.t0>=cfg.min_duration_s for q in out)
 
 
@@ -248,10 +248,7 @@ def test_continuous_comb_requires_solid_observed_root(anchor):
                   harmonic=order,group=7,kind='doppler') for order in orders]
     out=_continuous_combs(tracks,S,t,f,cfg)
     if anchor=='solid':
-        # Order two has no observed tone; it is a coherence-gated proposal
-        # over exactly the independently verified h1 span, never past it.
-        second=[tr for tr in out if tr.harmonic==2]
-        assert second and second[0].t0==t[0] and second[0].t1==t[-1]
+        assert not [tr for tr in out if tr.harmonic==2]  # absent, never proposed
         assert all(tr.doppler_score>=cfg.doppler_threshold for tr in out)
         assert all(tr.t0>=t[0] and tr.t1<=t[-1] for tr in out)
     else:
@@ -278,3 +275,122 @@ def test_orchestrator_music_note_sequence_is_not_doppler():
     cfg=DetectConfig(fmax=300)
     S,tt,f=ridge_spectrogram(x,sr,cfg)
     assert not [tr for tr in track_ridges(S,tt,f,cfg) if tr.kind=='doppler']
+
+
+def test_final_motion_guard_checks_each_returned_segment():
+    from dopplerscrub.ridges import _motion_guard
+    from dopplerscrub.types import Track
+    t=np.arange(0,10,.25)
+    flat=Track(t,376+.3*np.sin(t),np.zeros(len(t)),.95,kind='doppler')
+    moving=Track(t,180-3*t,np.zeros(len(t)),.95,kind='doppler')
+    out=_motion_guard([flat,moving],DetectConfig())
+    assert out[0].kind=='stationary' and out[0].doppler_score==0
+    assert out[1].kind=='doppler'
+
+
+def test_faint_harmonic_is_emitted_only_over_its_observed_span():
+    from dopplerscrub.ridges import _observed_harmonics
+    from dopplerscrub.types import Track
+    t=np.arange(0,24,.25);f=np.arange(30,650,.5)
+    base=80+8*np.tanh((t-12)/4)
+    S=18*np.exp(-.5*((f[:,None]-base[None,:])/.8)**2)
+    visible=(t>=6)&(t<=18)
+    S+=6*np.exp(-.5*((f[:,None]-2*base[None,:])/.8)**2)*visible
+    parent=Track(t,base,np.zeros(len(t)),.95,harmonic=1,group=0,kind='doppler')
+    out=_observed_harmonics([parent],S,t,f,DetectConfig(fmax=650),S)
+    second=[tr for tr in out if tr.harmonic==2]
+    assert second and second[0].t0>=5 and second[-1].t1<=19
+    assert not [tr for tr in out if tr.harmonic>=3]
+
+
+def test_continuation_ends_instead_of_jumping_against_predicted_slope():
+    from dopplerscrub.ridges import _continue_lines
+    from dopplerscrub.types import Track
+    t=np.arange(0,30,.25);f=np.arange(30,450,.5)
+    E=np.zeros((len(f),len(t)))
+    visible=(t>=15)&(t<=20)
+    E+=18*np.exp(-.5*((f[:,None]-(100+2*t)[None,:])/.5)**2)*visible
+    E+=25*np.exp(-.5*((f[:,None]-132)/.5)**2)*(t>20)
+    seed=Track(t[visible],100+2*t[visible],np.zeros(visible.sum()),.95,kind='candidate')
+    out=_continue_lines([seed],E,t,f,DetectConfig())
+    assert out[0].t1==20
+
+
+def test_duplicate_merge_never_averages_divergent_frequency_branches():
+    from dopplerscrub.ridges import _consolidate
+    from dopplerscrub.types import Track
+    t=np.arange(0,10,.25);frequency=100+2*t
+    a=Track(t,frequency,np.full(len(t),.02),.95,kind='doppler')
+    b=Track(t,frequency+np.where(t<6,.2,7.),np.full(len(t),.001),.95,kind='doppler')
+    out=_consolidate([a,b],.5)
+    assert len(out)==1
+    assert np.max(abs(out[0].f-frequency))<=.2
+
+
+def test_small_frequency_estimation_jitter_is_not_source_motion():
+    from dopplerscrub.ridges import _moving
+    f=np.array([165.16,164.29,164.67,163.19,163.29,163.29,164.79,164.79,
+                163.82,164.79,164.79,165.28,164.79,164.79,164.79,164.79,
+                164.79,164.73,164.68,164.41,164.21])
+    assert np.ptp(f)>1.5
+    assert not _moving(f,DetectConfig())
+
+
+def test_sparse_tracker_cannot_alias_across_dark_harmonic_gaps():
+    from dopplerscrub.ridges import _viterbi_lines
+    t=np.arange(0,8,.25);f=np.arange(80,120,.5)
+    E=np.zeros((len(f),len(t)));amp=np.zeros_like(E)
+    a=np.argmin(abs(f-100));b=np.argmin(abs(f-105))
+    E[a,::2]=17;E[b,1::2]=17
+    amp[a,:]=1; amp[b,:]=1
+    assert _viterbi_lines(E,t,f,4,limit=1,min_score=24)
+    assert not _viterbi_lines(E,t,f,4,limit=1,min_score=24,amplitude=amp)
+
+
+def test_reconstructed_order_cannot_redefine_unobserved_source_root():
+    from dopplerscrub.ridges import _regroup_sources
+    from dopplerscrub.types import Track
+    t=np.arange(0,20,.25);base=100+10*np.tanh((t-10)/4)
+    tracks=[Track(t,k*base,np.zeros(len(t)),score,harmonic=k,group=2,kind='doppler')
+            for k,score in [(2,.95),(4,.95),(3,.70)]]
+    out=_regroup_sources(tracks)
+    assert not any(tr.harmonic==1 for tr in out)
+    assert len({tr.group for tr in out})==1
+    assert sorted(tr.harmonic for tr in out)==[2,3,4]
+
+
+def test_continuation_stops_at_frequency_grid_boundary():
+    from dopplerscrub.ridges import _continue_lines
+    from dopplerscrub.types import Track
+    t=np.arange(0,30,.25);f=np.arange(30,150,.5)
+    E=18*np.exp(-.5*((f[:,None]-(100+2*t)[None,:])/.6)**2)
+    E[-1,t>24]=20
+    selected=(t>=15)&(t<=20)
+    seed=Track(t[selected],100+2*t[selected],np.zeros(selected.sum()),.95,kind='candidate')
+    out=_continue_lines([seed],E,t,f,DetectConfig(fmax=150))
+    assert np.min(out[0].f)>=f[0] and np.max(out[0].f)<=f[-1]
+
+
+def test_constant_five_hz_sideband_is_a_separate_shared_factor_family():
+    from dopplerscrub.ridges import _regroup_sources, _joint_source_factors
+    from dopplerscrub.types import Track
+    t=np.arange(0,30,.25);base=100+12*np.tanh((t-15)/5)
+    primary=[Track(t,k*base,np.zeros(len(t)),.95,harmonic=k,kind='doppler') for k in (1,2,3)]
+    side=[Track(t,k*base+5,np.zeros(len(t)),.95,harmonic=k,kind='doppler') for k in (2,3)]
+    out=_regroup_sources(primary+side)
+    assert len({tr.group for tr in primary})==1
+    assert len({tr.group for tr in side})==1
+    assert primary[0].group!=side[0].group
+    factors=_joint_source_factors(out)
+    assert len(factors)==2
+    for tr in factors:
+        np.testing.assert_allclose(tr.f,np.interp(tr.t,t,base),atol=1e-8)
+
+
+@pytest.mark.parametrize('bins',[25,81,321])
+def test_fast_frequency_median_matches_original_rank_filter(bins):
+    from scipy import ndimage
+    from dopplerscrub.ridges import _frequency_median
+    values=np.random.default_rng(71).normal(size=(500,17)).astype(np.float32)
+    expected=ndimage.median_filter(values,size=(bins,1),mode='nearest')
+    np.testing.assert_array_equal(_frequency_median(values,bins),expected)

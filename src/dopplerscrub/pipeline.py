@@ -56,11 +56,25 @@ def scrub_array(x: np.ndarray, sr: int, detect_cfg: DetectConfig | None = None,
         if doppler:
             t0 = time.time()
             log(f"noise-filling {len(doppler)} corridor(s) ...")
-            y = harden_tracks(y, sr, doppler, remove_cfg)
+            y = harden_tracks(y, sr, doppler, remove_cfg, x_ref=x)
             log(f"noise fill done ({time.time() - t0:.0f}s)")
     if stats_out is not None:
         stats_out["n_doppler"] = sum(t.kind in remove_cfg.remove_kinds for t in found)
     return y, found
+
+
+def _strip_notes(st: dict) -> list[str]:
+    """Human-readable notes on what the metadata strip removed (only what was there)."""
+    notes = []
+    if st["location"]:
+        notes.append("LOCATION tags stripped: " + ", ".join(st["location"]))
+    if st["other"]:
+        notes.append("metadata stripped: " + ", ".join(st["other"]))
+    if st["chapters"]:
+        notes.append(f"{st['chapters']} chapter(s) dropped")
+    if st["data_streams"]:
+        notes.append("data stream(s) dropped (may hold GPS telemetry): " + ", ".join(st["data_streams"]))
+    return notes
 
 
 def scrub(in_path: str | Path, out_path: str | Path, detect_cfg: DetectConfig | None = None,
@@ -87,7 +101,7 @@ def scrub(in_path: str | Path, out_path: str | Path, detect_cfg: DetectConfig | 
     rep = ScrubReport(str(in_path), str(out_path), sr, len(x) / sr, tracks, removed)
     rep.notes.append(f"runtime {time.time() - t_start:.1f}s")
     if strip_metadata:
-        rep.notes.append("container/stream metadata (incl. GPS location tags) stripped")
+        rep.notes.extend(_strip_notes(io.sensitive_tags(meta)))
     if report_path:
         Path(report_path).write_text(json.dumps({
             "input": rep.input, "output": rep.output, "sr": rep.sr,

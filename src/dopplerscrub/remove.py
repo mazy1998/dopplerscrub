@@ -421,17 +421,40 @@ def _flank_density(bb: _BB, W: float, E: float, others_off, nf: int):
     flank = (afr >= lo0) & (afr <= max(FILL_FLANK_HZ + 1.0, lo0 + FILL_MIN_FLANK_HZ))
     if not flank.any():
         return np.zeros((m, ch, ch), complex), np.zeros(m)
+    def usable(sel):
+        ok_ = np.ones((len(centers), int(sel.sum())), bool)
+        ffl_ = fr[sel]
+        for off in others_off:
+            oc = off[centers]
+            with np.errstate(invalid="ignore"):
+                ok_ &= ~(np.abs(ffl_[None, :] - oc[:, None]) < W + E + FILL_SUB_HZ / 2 + 0.5)
+        P_ = (np.abs(X[:, :, sel]) ** 2).sum(1) / norm[sel][None, :]
+        return P_, ok_
+
+    def med(P_, ok_):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            return np.nanmedian(np.where(ok_, P_, np.nan), axis=1)
+
     Xf = X[:, :, flank]                                                # (T, ch, K)
-    P = (np.abs(Xf) ** 2).sum(1) / norm[flank][None, :]                # (T, K) per-Hz trace
-    ok = np.ones(P.shape, bool)
-    ffl = fr[flank]
-    for off in others_off:
-        oc = off[centers]
-        with np.errstate(invalid="ignore"):
-            ok &= ~(np.abs(ffl[None, :] - oc[:, None]) < W + E + FILL_SUB_HZ / 2 + 0.5)
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
-        lev_f = np.nan_to_num(np.nanmedian(np.where(ok, P, np.nan), axis=1)) * FILL_MED_CAL
+    P, ok = usable(flank)                                              # (T, K) per-Hz trace
+    lev_f = med(P, ok)
+    # other tracks' corridors can cover every flank bin (a line detected many
+    # times, a dense comb): widen the flanks for those frames, and failing that
+    # carry the level over in time. (A zero level here = no fill = a notch.)
+    thin = ok.sum(1) < 4
+    if thin.any():
+        wide = (afr >= lo0) & (afr <= lo0 + 3 * FILL_MIN_FLANK_HZ)
+        Pw, okw = usable(wide)
+        lw = med(Pw, okw)
+        use_w = thin & (okw.sum(1) >= 4)
+        lev_f = np.where(use_w, lw, np.where(thin, np.nan, lev_f))
+    good = np.isfinite(lev_f)
+    if not good.any():
+        return np.zeros((m, ch, ch), complex), np.zeros(m)
+    if not good.all():
+        lev_f = np.interp(np.arange(len(lev_f)), np.flatnonzero(good), lev_f[good])
+    lev_f = lev_f * FILL_MED_CAL
     level = np.interp(np.arange(m), centers, lev_f)
     if ch == 1:
         return level[:, None, None].astype(complex), level
@@ -1135,15 +1158,20 @@ def _abs_flank_level(seg, sr, a, t, f, td, lo0):
 
 
 def harden_tracks(x: np.ndarray, sr: int, tracks: list[Track], cfg: RemoveConfig = RemoveConfig(),
-                  seed: int = 0x5C2B):
+                  seed: int = 0x5C2B, x_ref: np.ndarray | None = None):
     """Only the harden step (fill confirmed tracks' corridors with matched noise),
-    with the same do-no-harm invariant. Same shape/dtype in and out."""
-    return _run(x, sr, tracks, cfg, steps=("harden",), seed=seed)[0]
+    with the same do-no-harm invariant. Same shape/dtype in and out.
+
+    x_ref: the ORIGINAL recording when x has already been through removal passes
+    (as in the pipeline). The do-no-harm check then compares against what was
+    really there; against the already-cleaned x, a removed tone's corridor looks
+    like a valley and the fill would be capped to it (leaving a notch)."""
+    return _run(x, sr, tracks, cfg, steps=("harden",), seed=seed, x_ref=x_ref)[0]
 
 
 # ----------------------------------------------------------------------------- public
 
-def _run(x, sr, tracks, cfg, steps, seed=0x5C2B):
+def _run(x, sr, tracks, cfg, steps, seed=0x5C2B, x_ref=None):
     _CURVES.clear()
     x = np.asarray(x)
     dtype = x.dtype if np.issubdtype(x.dtype, np.floating) else np.float32
@@ -1163,17 +1191,29 @@ def _run(x, sr, tracks, cfg, steps, seed=0x5C2B):
     # (everything outside the corridors' time spans) stay bit-exact.
     fmax = max(float(np.max(it.f)) for it in items)
     fw = _lowband_rate(sr, fmax) if LOWBAND else sr
+    ref = None
+    if x_ref is not None:
+        ref = np.asarray(x_ref)
+        ref = ref[:, None] if ref.ndim == 1 else ref
+        if ref.shape != x0.shape:
+            raise ValueError("x_ref must have the same shape as x")
     if fw < sr:
         rr = Fraction(fw, sr).limit_denominator(1000)
         up, down = rr.numerator, rr.denominator
-        xw = np.empty((-(-x0.shape[0] * up // down), x0.shape[1]))
-        for o0, blk in _resample_blocks(x0, up, down, sr):
-            xw[o0:o0 + len(blk)] = blk
+
+        def lowband(v):
+            out = np.empty((-(-v.shape[0] * up // down), v.shape[1]))
+            for o0, blk in _resample_blocks(v, up, down, sr):
+                out[o0:o0 + len(blk)] = blk
+            return out
+        xw = lowband(x0)
         yw = xw.copy()
+        refw = lowband(ref) if ref is not None else xw
         for it in items:
             it.f = np.clip(it.f, 1.0, fw / 2 - 1.0)
     else:
         xw, yw = x0, x0.astype(dtype, copy=True)
+        refw = ref if ref is not None else xw
     x_full, sr_full, x0, sr, y = x0, sr, xw, fw, yw
     min_score = getattr(cfg, "harden_min_score", 0.5)
     extra_mask = {}
@@ -1219,7 +1259,7 @@ def _run(x, sr, tracks, cfg, steps, seed=0x5C2B):
     for i, it in enumerate(items):
         others = _near(items, i, cfg.pad_s)
         half = _safe_half_width(cfg, extra_mask.get(id(it), 0.0))
-        records.append(_do_no_harm(x0, y, sr, it, cfg, it.score >= min_score, half, others))
+        records.append(_do_no_harm(refw, y, sr, it, cfg, it.score >= min_score, half, others))
     frac, frac_band = _tf_fraction(records, items, x0.shape[0], sr)
     if sr < sr_full:                                   # back to the full rate: add the difference
         d = y - x0

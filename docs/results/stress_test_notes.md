@@ -6,17 +6,29 @@ are the findings in detect/ridges, written down rather than edited.
 
 ## Runtime: where the hour goes now
 
-`dopplerscrub clean data/real/colsto.wav` (3600 s, 48 kHz stereo):
+`dopplerscrub clean data/real/colsto.wav --report --plot` (3600 s, 48 kHz stereo).
+The final run is shown below; the detector kept changing between runs, so track counts differ.
 
-| stage | before (old remove) | after |
+| stage | final run | share |
 |---|---|---|
-| detect, pass 1 | ~300 s | 296 s |
-| remove, pass 1 (453 tracks) | extrapolated hours (10-min excerpt: 979 s in remove) | 75 s |
-| detect, pass 2 | — | see FINAL below |
-| noise fill (harden) | 285 s per 10 min | see FINAL below |
+| decode | 1 s | |
+| detect, pass 1 (409 tones, 251 Doppler) | 309 s | 42% |
+| remove, pass 1 (VK) | 40 s | |
+| detect, pass 2 (180 tones, 62 Doppler) | 292 s | 40% |
+| remove, pass 2 (VK) | 15 s | |
+| noise fill, 313 corridors | 56 s | |
+| encode FLAC | 7 s | |
+| **total** | **730 s (12.2 min), peak RSS 6.1 GB** | detect = 82% |
 
-**Detection is now the dominant cost.** It runs twice (2 passes), at about 5 min per
-pass on the hour.
+The original run (old remove) was killed after 46 min at 6.5 GB without finishing.
+Its 10-minute profile took 1568 s, 979 s of it in remove. Remove now scales with
+the number of tracks at about 0.15–0.3 s per track. In a run where the detector
+returned 1573 Doppler tracks per hour, remove took 459 s, so **the detector's
+track count is the other lever**.
+
+**To reach 10 min per hour, detection must drop from about 600 s to under about
+450 s.** Running one detection pass instead of two would already do it (pass 2
+finds 62 of the 313 tones).
 
 ### cProfile of `detect_tracks` (4-min colsto excerpt, 36.8 s total)
 

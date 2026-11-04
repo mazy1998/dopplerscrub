@@ -15,7 +15,10 @@ Privacy: with ``strip_metadata=True`` all global, per-stream and chapter
 metadata is dropped (that includes ``location``,
 ``com.apple.quicktime.location.ISO6709``, ``creation_time``, device make/model,
 etc.), data streams (e.g. GoPro ``gpmd`` GPS telemetry, timecode tracks) are not
-copied, and ``-fflags +bitexact`` suppresses the encoder version tag.
+copied, and ``-fflags +bitexact`` suppresses the encoder version tag. Only the
+harmless per-stream ``language`` and ``handler_name`` tags are carried over
+(a handler name that names a device brand, e.g. "GoPro AVC", is dropped too).
+``sensitive_tags(meta)`` lists what a strip removes, for reporting.
 Audio streams that were not given cleaned audio are DROPPED (with a warning)
 rather than copied, because they would still contain the Doppler tones.
 """
@@ -23,6 +26,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -243,6 +247,60 @@ def _audio_codec_args(src: dict | None, ext: str, sr: int, out_idx: int) -> list
     return args
 
 
+KEEP_STREAM_TAGS = ("language", "handler_name")   # harmless; everything else is stripped
+_STRUCTURAL = {"major_brand", "minor_version", "compatible_brands", "encoder", "vendor_id"}
+_LOCATION_RE = re.compile(r"location|iso6709|gps|xyz|latitude|longitude|altitude", re.I)
+_COORD_RE = re.compile(r"[+-]\d{1,3}\.\d+[+-]\d{1,3}\.\d+")
+_BRAND_RE = re.compile(r"gopro|apple|iphone|ipad|samsung|galaxy|sony|canon|nikon|dji|osmo|"
+                       r"panasonic|lumix|google|pixel|huawei|xiaomi|oneplus|insta360|garmin|"
+                       r"fuji|olympus|blackmagic|zoom|tascam", re.I)
+
+
+def _harmless(key: str, value) -> bool:
+    v = str(value)
+    return (len(v) <= 64 and v.isprintable() and not _COORD_RE.search(v)
+            and not _LOCATION_RE.search(v) and not (key == "handler_name" and _BRAND_RE.search(v)))
+
+
+def sensitive_tags(meta: dict) -> dict:
+    """What a metadata strip removes from this file: {"location": [...tag names],
+    "other": [...tag names], "chapters": n, "data_streams": [...codec names]}.
+    Container-structural tags (brands, encoder) and the kept per-stream
+    language/handler tags are not listed."""
+    loc, other = [], []
+
+    def scan(tags, prefix=""):
+        for k, v in (tags or {}).items():
+            if k in _STRUCTURAL or (prefix and k in KEEP_STREAM_TAGS and _harmless(k, v)):
+                continue
+            name = prefix + k
+            (loc if (_LOCATION_RE.search(k) or _COORD_RE.search(str(v))) else other).append(name)
+    scan(meta.get("tags"))
+    for grp in ("video_streams", "audio_streams", "subtitle_streams", "other_streams"):
+        for st in meta.get(grp, []):
+            scan(st.get("tags"), f"stream{st.get('index')}:")
+    return {"location": sorted(set(loc)), "other": sorted(set(other)),
+            "chapters": int(meta.get("chapters") or 0),
+            "data_streams": [st.get("codec") or "?" for st in meta.get("other_streams", [])]}
+
+
+def _keep_tag_args(meta: dict, keep_visual: bool, subs_mapped: bool, n_audio: int) -> list[str]:
+    """-metadata args re-adding the harmless per-stream tags after -map_metadata -1."""
+    args = []
+    groups = [("a", meta.get("audio_streams", [])[:n_audio])]
+    if keep_visual:
+        groups.append(("v", meta.get("video_streams", [])))
+        if subs_mapped:
+            groups.append(("s", meta.get("subtitle_streams", [])))
+    for t, streams in groups:
+        for j, st in enumerate(streams):
+            for k in KEEP_STREAM_TAGS:
+                v = (st.get("tags") or {}).get(k)
+                if v is not None and _harmless(k, v):
+                    args += [f"-metadata:s:{t}:{j}", f"{k}={v}"]
+    return args
+
+
 def save(src_path, dst_path, x, sr: int, meta: dict | None = None, strip_metadata: bool = True):
     """Write cleaned audio ``x`` to ``dst_path``.
 
@@ -279,9 +337,11 @@ def save(src_path, dst_path, x, sr: int, meta: dict | None = None, strip_metadat
             wp = os.path.join(tmpdir, f"a{i}.wav")
             sf.write(wp, np.asarray(xi, dtype=np.float32), int(si), subtype="FLOAT", format="WAV")
             cmd += ["-i", wp]
+        subs_mapped = bool(keep_visual and meta["subtitle_streams"]
+                           and ext in (".mkv", ".mp4", ".mov", ".m4v", ".webm"))
         if keep_visual:
             cmd += ["-map", "0:v?"]
-            if meta["subtitle_streams"] and ext in (".mkv", ".mp4", ".mov", ".m4v", ".webm"):
+            if subs_mapped:
                 cmd += ["-map", "0:s?"]
         for i in range(len(xs)):
             cmd += ["-map", f"{i + off}:a:0"]
@@ -298,6 +358,7 @@ def save(src_path, dst_path, x, sr: int, meta: dict | None = None, strip_metadat
         if strip_metadata:
             cmd += ["-map_metadata", "-1", "-map_chapters", "-1",
                     "-fflags", "+bitexact", "-flags:a", "+bitexact"]
+            cmd += _keep_tag_args(meta, keep_visual, subs_mapped, min(len(xs), n_src_audio))
         else:
             cmd += ["-map_metadata", "0"]
             for i in range(min(len(xs), n_src_audio)):

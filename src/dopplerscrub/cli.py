@@ -46,7 +46,14 @@ def cmd_clean(a) -> int:
             from .evaluate import render_before_after
             png = dst.with_suffix(".png")
             log("rendering before/after spectrogram ...")
-            render_before_after(x, y, sr, png, tracks=rep.tracks, title=src.name)
+            from .evaluate import attack_views
+            views = attack_views(x, y, sr)
+            st = views["orig"].t
+            dt = float(st[1] - st[0]) if len(st) > 1 else 0.25
+            # pin the time axis to the spectrogram's own extent (otherwise the
+            # track overlay's autoscale margin leaves an empty strip at the end)
+            render_before_after(x, y, sr, png, tracks=rep.tracks, title=src.name, views=views,
+                                window=(float(st[0]) - dt / 2, float(st[-1]) + dt / 2))
             print(f"  spectrogram: {png}")
     return 0
 

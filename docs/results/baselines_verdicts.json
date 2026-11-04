@@ -1,0 +1,97 @@
+{
+ "_summary": "**Partly proven: the claim holds for targeted removal with correct tracks (oracle), but not yet for dopplerscrub end to end (dev snapshot, detector not frozen).**\n\n1. **Blanket methods mostly do NOT hide the curves from this attacker.** The attacker whitens every frequency bin by its own median, so it is blind to linear gain and to broadband masking. The **Butterworth band-stop** (as specified) attenuates only about 10-20 dB near its 40/450 Hz edges, so harmonics at 300-450 Hz stay fully visible (prop_pass, colsto, prop_quiet's 3rd harmonic; a controlled test gives z = 151,000 at 400 Hz before and after). Even at 60 Hz, -74 dB is not enough over a 16-bit floor (z 222). **0 dB band noise** leaves the curves faintly to plainly visible (prop_pass and colsto plainly; synth AF z 3-9), because the noise's power per 0.5 Hz bin is low. **Jitter (+-1% wow)** hides nothing: the ridge only wobbles (AF z 34-70 on the visible synth curves, prop_pass and colsto unchanged by eye). Only a **brick-wall band-stop** (STFT bins 35-480 Hz zeroed; added as the strongest blanket) hides everything (synth AF z <= 0.4; real event boxes about 1-4% ridge cells, i.e. noise).\n2. **Targeted removal with correct tracks (oracle) hides the curves as well as the brick-wall band-stop:** AF z about 0 on every visible synthetic clip, -10 dB integrated target met or within 0.5 dB, no ghost by eye. It damages far less: median LSD 0.54 vs 9.8 dB, STOI-like 0.97 vs 0.64, speech-band SNR about 20 vs 7.5 dB, about 2% vs 6% of the whole TF plane and none of the band outside the corridors (the brick wall erases 100% of 40-480 Hz).\n3. **dopplerscrub end to end (current detector) does not yet match.** On synth it misses curves under speech, in stereo and in the 2-aircraft overlap (AF z 11 / 7.6 / 15.5 after, where the oracle gets about 0): the gap between dopplerscrub and the oracle is detector error. On colsto event 1 it hides the event's curves with moderate damage (LSD 0.94 vs 5.5 dB for the brick wall, STOI-like 0.93 vs 0.63), but leaves dark holes visible by eye. Across the visible clips its median damage (LSD 0.72 dB, STOI-like 0.95, speech SNR 16 dB) is close to the oracle's and far below the blankets', but it also modifies 4.5% of cells above 450 Hz, outside the attacker's band, where the oracle touches 0.1%. On prop_pass it does worst of all: it damages as much as the brick wall (speech SNR 1.1 dB, STOI-like 0.68, 24% of the TF plane) while the top of the harmonic fan stays visible.\n\n**Bottom line:** removal with correct tracks is the only approach that both hides and preserves; blanket filtering only hides when it erases the entire band. The remaining work is detection recall plus fewer false corridors (see redteam.md), then re-test on the held-out set once the detector is frozen.",
+ "prop_quiet": {
+  "dopplerscrub": "Curves gone by eye; no ghost in the smoothed view.",
+  "oracle": "Curves gone by eye.",
+  "bandstop": "FAIL: the 3rd harmonic (~400->300 Hz, 35-50 s) is plainly visible (band-edge weakness).",
+  "bandstop_brick": "Curves gone; whole band replaced by the output floor.",
+  "noise": "Curves faintly visible.",
+  "jitter": "FAIL: curves plainly visible (wobbled)."
+ },
+ "overlap": {
+  "dopplerscrub": "Gone in the stock view; AF z 15.5 says an integrating attacker still finds part of it (a faint ghost, not visible to me).",
+  "oracle": "Gone.",
+  "bandstop": "Gone by eye (all curves mid-band); AF z 2.0.",
+  "bandstop_brick": "Gone.",
+  "noise": "Faint lines visible in the stock view.",
+  "jitter": "FAIL: curves plainly visible."
+ },
+ "speech": {
+  "dopplerscrub": "FAIL (faint): ghost of the 150->120 Hz curve; AF z 11.",
+  "oracle": "Gone; speech untouched by eye.",
+  "bandstop": "Gone by eye; AF z 1.6; but speech below 450 Hz is gone too.",
+  "bandstop_brick": "Gone; low speech band erased.",
+  "noise": "Mostly hidden (AF z 2.6); speech-band SNR 1.8 dB.",
+  "jitter": "FAIL: curve visible (AF z 8.0)."
+ },
+ "stereo": {
+  "dopplerscrub": "FAIL: not detected; curve unchanged (z 7.6).",
+  "oracle": "Gone.",
+  "bandstop": "Gone (z 0.3).",
+  "bandstop_brick": "Gone.",
+  "noise": "Borderline (z 3.0).",
+  "jitter": "FAIL: visible (z 6.3)."
+ },
+ "prop_pass": {
+  "dopplerscrub": "FAIL: the lower fan is reduced, but the 300-450 Hz sweep (20-30 s) stays bright, and the removal leaves dark hole bands; heavy damage (speech SNR 1.1 dB).",
+  "bandstop": "FAIL: the 300-450 Hz harmonic fan is fully visible (band-edge weakness); the low part is gone.",
+  "bandstop_brick": "Hidden: only a faint broadband blob near 25 s remains; everything in-band is erased.",
+  "noise": "FAIL: the whole sweep plainly visible over the noise.",
+  "jitter": "FAIL: unchanged by eye."
+ },
+ "colsto_2050_2250": {
+  "dopplerscrub": "Event-box curves gone (both the sweep and its harmonic), but dark holes are visible (e.g. 200-240 Hz at 25-40 s, ~175 Hz); stepped tones partly kept.",
+  "bandstop": "Event box clean, but the 450->330 Hz sweep at 75-105 s is still visible near the band edge.",
+  "bandstop_brick": "Everything hidden, including all non-Doppler content in the band.",
+  "noise": "FAIL: event curves plainly visible.",
+  "jitter": "FAIL: unchanged by eye."
+ },
+ "prop_faint": {
+  "dopplerscrub": "N/A (not visible before).",
+  "oracle": "N/A",
+  "bandstop": "N/A",
+  "bandstop_brick": "N/A",
+  "noise": "N/A",
+  "jitter": "N/A"
+ },
+ "f1": {
+  "dopplerscrub": "N/A (not visible before).",
+  "oracle": "N/A",
+  "bandstop": "N/A",
+  "bandstop_brick": "N/A",
+  "noise": "N/A",
+  "jitter": "N/A"
+ },
+ "helicopter": {
+  "dopplerscrub": "N/A (not visible before).",
+  "oracle": "N/A",
+  "bandstop": "N/A",
+  "bandstop_brick": "N/A",
+  "noise": "N/A",
+  "jitter": "N/A"
+ },
+ "jet": {
+  "dopplerscrub": "N/A (not visible before).",
+  "oracle": "N/A",
+  "bandstop": "N/A",
+  "bandstop_brick": "N/A",
+  "noise": "N/A",
+  "jitter": "N/A"
+ },
+ "music": {
+  "dopplerscrub": "N/A (not visible before); untouched.",
+  "oracle": "N/A",
+  "bandstop": "N/A",
+  "bandstop_brick": "N/A",
+  "noise": "N/A",
+  "jitter": "N/A"
+ },
+ "long_hum60": {
+  "dopplerscrub": "N/A (not visible before).",
+  "oracle": "N/A",
+  "bandstop": "N/A",
+  "bandstop_brick": "N/A",
+  "noise": "N/A",
+  "jitter": "N/A"
+ }
+}

@@ -527,3 +527,29 @@ def test_fill_is_statistically_identical_to_flanks(background):
     assert ks_2samp(c, g).pvalue > 0.05
     assert abs(c.mean() - g.mean()) < 0.3
     assert 0.9 <= c.std() / g.std() <= 1.1
+
+
+def test_pipeline_style_harden_needs_original_reference():
+    """Pipeline: removal passes first, then harden_tracks on the cleaned audio.
+    With x_ref=original the fill restores the background; against the cleaned
+    audio alone, do-no-harm sees the removed tone's corridor as a valley and caps
+    the fill to it (a curve-shaped notch: the colsto 245 Hz regression)."""
+    from dopplerscrub.remove import harden_tracks
+    sr, dur = 8000, 60
+    n = sr * dur
+    tt = np.arange(n) / sr
+    b = 0.01 * np.random.default_rng(4).standard_normal(n)
+    fn = lambda t: 245.0 + 0.02 * (t - 30)
+    tg = np.arange(5, 55, 0.25)
+    x = (tone(fn(tt), sr, amp=0.05, span=(5, 55)) + b).astype(np.float32)
+    trs = [mk_track(tg, fn(tg))]
+    y1 = remove_tracks(x, sr, trs, RemoveConfig(method="vk", harden=False))
+
+    def notch_db(y):
+        f, t, Y = stft(y.astype(float), fs=sr, nperseg=8192, noverlap=8192 - 2000)
+        sel = (t > 10) & (t < 50)
+        P = np.abs(Y[:, sel]) ** 2
+        d = np.abs(f[:, None] - fn(t[sel])[None, :])
+        return 10 * np.log10(P[d < 0.6].mean() / P[(d > 8) & (d < 20)].mean())
+    assert notch_db(y1) < -10                                   # VK alone: hole
+    assert abs(notch_db(harden_tracks(y1, sr, trs, RemoveConfig(), x_ref=x))) < 2.0

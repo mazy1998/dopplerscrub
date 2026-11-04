@@ -361,13 +361,20 @@ def _ridge_vehicles(t,f,amp,s,cfg):
     return out
 
 
+def _frequency_median(values,width):
+    """Exact frequency-axis median using SciPy's fast one-dimensional path."""
+    columns=np.ascontiguousarray(np.asarray(values).T);result=np.empty_like(columns)
+    for j in range(len(columns)):ndimage.median_filter(columns[j],size=width,mode='nearest',output=result[j])
+    return result.T
+
+
 def _bright_ridges(t,f,amp,s,cfg):
     """Observed peak tracker with a constant-velocity predictor; no orders inferred."""
     band=f<=min(cfg.fmax,450.)
     f=f[band];amp=amp[band];s=s[band]
     df=f[1]-f[0];active=[];finished=[]
     raw=20*np.log10(amp+1e-15)
-    tonal=raw-ndimage.median_filter(raw,size=(25,1),mode='nearest')
+    tonal=raw-_frequency_median(raw,25)
     # Time whitening hides nearly steady aircraft lines. Restore measured
     # narrowband contrast; truly steady lines still fail the movement test.
     s=np.maximum(s,tonal-4)
@@ -425,7 +432,10 @@ def _bright_ridges(t,f,amp,s,cfg):
             frequency=ideal_curve(grid,*pp)
         amplitude=np.interp(grid,t[ii],amp[jj,ii])
         kind='doppler' if np.ptp(frequency)>=max(cfg.min_sweep_hz,.004*np.median(frequency)) else 'stationary'
-        output.append(Track(grid,frequency,amplitude,.85 if kind=='doppler' else 0.,None,1,len(output),kind))
+        heard=fit['t_cpa']+fit['d_cpa']/_C
+        margin=min(20.,.5*np.ptp(grid))
+        parametric=fit['rms_hz']<1. and fit['v']<=150 and fit['d_cpa']>=50 and fit['f0']>=40 and grid[0]-margin<=heard<=grid[-1]+margin
+        output.append(Track(grid,frequency,amplitude,.85 if kind=='doppler' else 0.,fit if parametric else None,1,len(output),kind))
     return output
 
 
@@ -459,6 +469,7 @@ def _steady_lines(t,f,amp,cfg):
 def _motion_kind(track,cfg,allow_maneuver=False):
     """Classify whole-track motion, independently of its detector provenance."""
     if len(track.t)<2 or track.t1-track.t0<cfg.min_duration_s:return None
+    if allow_maneuver=='source_fragment':return 'doppler'
     median=float(np.median(track.f));minimum=max(1.5,.01*median,cfg.min_sweep_hz)
     smooth=ndimage.gaussian_filter1d(track.f,2)
     excursion=float(np.ptp(smooth))
@@ -511,6 +522,17 @@ def _motion_families(tracks):
 
 
 def _consolidate_families(tracks,cfg,trusted_groups):
+    # Joining adjacent fragments can expose an overlapping native family.
+    # Rebuild representatives so source coherence is transitive, rather than
+    # depending on which fragment had the lowest whole-span median.
+    for _ in range(3):
+        before=len({q.group for q in tracks if q.kind=='doppler'})
+        _consolidate_family_pass(tracks,cfg,trusted_groups)
+        if len({q.group for q in tracks if q.kind=='doppler'})==before:break
+    return tracks
+
+
+def _consolidate_family_pass(tracks,cfg,trusted_groups):
     """Unify source labels before expanding their shared harmonic factor.
 
     An independently found higher harmonic must not seed a second complete
@@ -529,13 +551,43 @@ def _consolidate_families(tracks,cfg,trusted_groups):
         matched=False
         for base in canonical:
             if q.group==base.group:matched=True;break
+            offset_q=getattr(q,'_ridge_offset_hz',0.);offset_base=getattr(base,'_ridge_offset_hz',0.)
+            if abs(offset_q-offset_base)>=2.:continue
             lo=max(q.t0,base.t0);hi=min(q.t1,base.t1)
-            if hi-lo<max(8.,.5*min(q.t1-q.t0,base.t1-base.t0)):continue
+            if hi-lo<max(8.,.5*min(q.t1-q.t0,base.t1-base.t0)):
+                first,second=(q,base) if q.t0<base.t0 else (base,q)
+                gap=second.t0-first.t1
+                end=first.f[-1]/first.harmonic;start=second.f[0]/second.harmonic
+                if not(0<gap<=1 and abs(end-start)<=max(3.,.03*(end+start)/2)):continue
+                slope_a=(first.f[-1]-first.f[-min(8,len(first.f))])/first.harmonic
+                slope_b=(second.f[min(7,len(second.f)-1)]-second.f[0])/second.harmonic
+                if slope_a*slope_b<0:continue
+                loser=q.group;winner=base.group
+                if loser in trusted_groups:trusted_groups.add(winner)
+                for member in tracks:
+                    if member.group==loser:member.group=winner
+                matched=True;break
             tt=np.arange(lo,hi,.25)
-            a=np.interp(tt,q.t,q.f)/q.harmonic;b=np.interp(tt,base.t,base.f)/base.harmonic
+            a=(np.interp(tt,q.t,q.f)-offset_q)/q.harmonic;b=(np.interp(tt,base.t,base.f)-offset_base)/base.harmonic
             k=round(float(np.median(a/b)))
             if k<1 or np.std(b)<.5:continue
             if np.sqrt(np.mean((a/k-b)**2))>.65 or np.corrcoef(a,b)[0,1]<.97:continue
+            # Close fundamental estimates do not justify collapsing observed
+            # 4--6 Hz sidebands at higher orders into one physical family.
+            distinct=False
+            left_members=[member for member in tracks if member.group==q.group]
+            right_members=[member for member in tracks if member.group==base.group]
+            for first in left_members:
+                for second in right_members:
+                    if first.harmonic*k!=second.harmonic:continue
+                    begin=max(first.t0,second.t0);end=min(first.t1,second.t1)
+                    if end-begin<8:continue
+                    grid=np.arange(begin,end,.25)
+                    offset=np.interp(grid,first.t,first.f)-np.interp(grid,second.t,second.f)
+                    if 3.5<=abs(np.median(offset))<=6.5 and np.std(offset)<.75:
+                        distinct=True;break
+                if distinct:break
+            if distinct:continue
             loser=q.group;winner=base.group
             if loser in trusted_groups:trusted_groups.add(winner)
             for member in tracks:
@@ -559,7 +611,7 @@ def _dedupe_tracks(tracks,cfg,trusted_groups=None):
             if hi-lo<max(2.,.5*min(tr.t1-tr.t0,old.t1-old.t0)):continue
             grid=np.arange(lo,hi+.01,.25)
             difference=np.interp(grid,tr.t,tr.f)-np.interp(grid,old.t,old.f)
-            if np.sqrt(np.mean(difference**2))<.5 and np.mean(abs(difference)<1)>.9:
+            if np.sqrt(np.mean(difference**2))<1. and np.mean(abs(difference)<1)>.8:
                 match=old;break
         if match is None:merged.append(tr);continue
         if trusted_groups is not None and tr.group in trusted_groups:trusted_groups.add(match.group)
@@ -571,19 +623,229 @@ def _dedupe_tracks(tracks,cfg,trusted_groups=None):
         times=np.r_[match.t,tr.t[outside]];order=np.argsort(times)
         match.f=np.r_[match.f,tr.f[outside]][order];match.amp=np.r_[match.amp,tr.amp[outside]][order];match.t=times[order]
         bounds[id(match)]=(min(bounds[id(match)][0],bounds[id(tr)][0]),max(bounds[id(match)][1],bounds[id(tr)][1]))
+        if hasattr(tr,'_ridge_offset_hz') and not hasattr(match,'_ridge_offset_hz'):match._ridge_offset_hz=tr._ridge_offset_hz
+        match._source_fragment=getattr(match,'_source_fragment',False) or getattr(tr,'_source_fragment',False)
+        match._integration_parent=getattr(match,'_integration_parent',False) or getattr(tr,'_integration_parent',False)
         match.doppler_score=max(match.doppler_score,tr.doppler_score)
     return merged
+
+
+def _clip_integration_parents(tracks,native,cfg):
+    """Bound integration models to independently observed source support.
+
+    A good whole-pass excursion does not establish that extrapolated model
+    tails are audible. Compare source factors with observed native curves;
+    preserve only their matching spans, bridging at most 1.5 seconds.
+    """
+    output=[]
+    references=[q for q in native if q.kind=='doppler' and q.doppler_score>=cfg.doppler_threshold and len(q.t)>=2]
+    for q in tracks:
+        if not getattr(q,'_integration_parent',False) or q.fit is not None or q.kind!='doppler':
+            output.append(q);continue
+        support=np.zeros(len(q.t),bool);root=q.f/max(1,q.harmonic)
+        for ref in references:
+            lo=max(q.t0,ref.t0);hi=min(q.t1,ref.t1)
+            if hi-lo<cfg.min_duration_s:continue
+            tt=np.arange(lo,hi+.01,.25)
+            base=np.interp(tt,q.t,root);observed=np.interp(tt,ref.t,ref.f)
+            k=round(float(np.median(observed/base)))
+            if k<1 or k>cfg.fmax/max(float(np.min(base)),1):continue
+            error=observed/k-base
+            if np.sqrt(np.mean(error**2))>.5:continue
+            support|=(q.t>=lo)&(q.t<=hi)
+        missing=np.flatnonzero(~support)
+        for gap in np.split(missing,np.flatnonzero(np.diff(missing)>1)+1):
+            if 0<len(gap)<=6 and gap[0]>0 and gap[-1]<len(q.t)-1:support[gap]=True
+        indices=np.flatnonzero(support)
+        for part in np.split(indices,np.flatnonzero(np.diff(indices)>1)+1):
+            if len(part)<2 or q.t[part[-1]]-q.t[part[0]]<cfg.min_duration_s:continue
+            piece=Track(q.t[part],q.f[part],q.amp[part],q.doppler_score,q.fit,q.harmonic,q.group,q.kind)
+            piece._integration_parent=True
+            if hasattr(q,'_ridge_offset_hz'):piece._ridge_offset_hz=q._ridge_offset_hz
+            output.append(piece)
+    return output
+
+
+def _local_evidence(s,f,curve):
+    """Sample exact-curve contrast against the native frequency median.
+
+    Only the background uses neighboring bins. The candidate brightness is
+    never maximized in a corridor. This matches ridges._evidence without
+    recomputing a full-file median image for each harmonic probe.
+    """
+    df=f[1]-f[0];bins=(curve-f[0])/df
+    low=np.clip(np.floor(bins).astype(int),0,len(f)-2);weight=np.clip(bins-low,0,1)
+    background=np.zeros(len(curve));columns=np.arange(len(curve))
+    for lower,upper,width in ((0,450,18.),(450,700,80.),(700,np.inf,160.)):
+        selected=(curve>lower)&(curve<=upper)
+        if not selected.any():continue
+        size=max(5,int(round(width/df))|1);offset=np.arange(-(size//2),size//2+1)[:,None]
+        row=low[selected][None,:]+offset;col=columns[selected][None,:]
+        a=np.median(s[np.clip(row,0,len(f)-1),col],axis=0)
+        b=np.median(s[np.clip(row+1,0,len(f)-1),col],axis=0)
+        background[selected]=(1-weight[selected])*a+weight[selected]*b
+    return _sample(s,f,curve)-background
+
+
+def _close_evidence_gaps(mask,maximum=6):
+    result=np.asarray(mask,bool).copy();missing=np.flatnonzero(~result)
+    for gap in np.split(missing,np.flatnonzero(np.diff(missing)>1)+1):
+        if 0<len(gap)<=maximum and gap[0]>0 and gap[-1]<len(result)-1:result[gap]=True
+    return result
+
+
+def _curve_significance(s,f,curve,indices=None,likelihood=None):
+    """Integrated LLR relative to identically sampled displaced curves."""
+    if indices is None:indices=np.arange(len(curve))
+    if len(indices)<8:return -np.inf
+    if likelihood is None:likelihood=_llr(s)
+    signal_values=_sample(likelihood,f,curve)[indices]
+    controls=[]
+    for shift in (-14.,-12.,-10.,-8.,8.,10.,12.,14.):
+        if np.mean((curve[indices]+shift>=f[0])&(curve[indices]+shift<=f[-1]))<.8:continue
+        controls.append(_sample(likelihood,f,curve+shift)[indices])
+    if len(controls)<4:return -np.inf
+    means=np.mean(controls,axis=1)
+    # Adjacent STFT frames share a window; do not count them as IID samples.
+    effective=max(1.,len(indices)/4.)
+    sigma=max(float(np.std(means,ddof=1)),float(np.sqrt(np.mean(np.var(controls,axis=1))/effective)),.025)
+    return float((np.mean(signal_values)-np.median(means))/sigma)
+
+
+def _extend_parametric(track,t,f,amp,s,cfg):
+    """Follow a confirmed ideal pass through audible approach/recede tails."""
+    if track.kind!='doppler' or track.fit is None:return track
+    fit=track.fit
+    if fit.get('rms_hz',np.inf)>1. or not(5<=fit['v']<=150 and fit['d_cpa']>=50):return track
+    horizon=min(240.,max(120.,3*fit['d_cpa']/fit['v']))
+    left=int(np.searchsorted(t,track.t0-horizon));right=int(np.searchsorted(t,track.t1+horizon,side='right'))
+    tt=t[left:right]
+    curve=ideal_curve(tt,*[fit[k] for k in ('f0','v','d_cpa','t_cpa')])
+    local=s[:,left:right]
+    if not getattr(track,'_spectral_refined',False):
+        initial=np.array([fit[k] for k in ('f0','v','d_cpa','t_cpa')])
+        seeds=[initial.copy()]
+        for coordinate,delta in ((0,-.5),(0,.5),(1,-.08*initial[1]),(1,.08*initial[1]),(2,-.15*initial[2]),(2,.15*initial[2]),(3,-1.),(3,1.)):
+            seed=initial.copy();seed[coordinate]+=delta;seeds.append(seed)
+        first=0
+        last=min(len(f),int(np.searchsorted(f,3*np.max(track.f)+20))+1)
+        refine_f=f[first:last];refine_data=local[first:last]
+        likelihood=np.clip(_llr(refine_data),-1,20)
+        initial_z=_curve_significance(refine_data,refine_f,curve,likelihood=likelihood)
+        if initial_z<10 or track.t1-track.t0<20:
+            # A short ridge fixes instantaneous frequency but poorly constrains
+            # speed/distance. Solve f0 on that ridge for a conditional shape
+            # bank, then score its complete predicted pass in one batch.
+            bank=[];heard=initial[3]+initial[2]/_C
+            for speed in (25.,40.,60.,80.,100.,125.,150.):
+                for tau in (3.,6.,10.,15.,25.,50.):
+                    distance=speed*tau
+                    for center in np.linspace(heard-8,heard+8,9):
+                        cpa=center-distance/_C
+                        ratio=ideal_curve(track.t,1.,speed,distance,cpa)
+                        fundamental=float(np.dot(track.f,ratio)/np.dot(ratio,ratio))
+                        if fundamental<40 or distance<50:continue
+                        if np.sqrt(np.mean((fundamental*ratio-track.f)**2))>1.:continue
+                        bank.append([fundamental,speed,distance,cpa])
+            if bank:
+                parameters=np.asarray(bank);columns=np.arange(len(tt))[None,:]
+                ratios=ideal_curve(tt[None,:],*[parameters[:,j,None] for j in range(4)])
+                scores=np.zeros(len(bank))
+                for order,weight in ((1,1.),(2,.25),(3,.15)):
+                    bins=(order*ratios-f[0])/(f[1]-f[0]);rows=np.clip(np.floor(bins).astype(int),0,len(f)-2);fraction=np.clip(bins-rows,0,1)
+                    values=_llr(local[rows,columns]*(1-fraction)+local[rows+1,columns]*fraction)
+                    valid=(bins>=0)&(bins<=len(f)-1)
+                    scores+=weight*np.mean(np.where(valid,values,0.),axis=1)
+                selected=np.argsort(scores)[-min(16,len(bank)):]
+                seeds.extend(parameters[selected])
+        initial_seeds=np.asarray(seeds)
+        candidates=_refine_curves(tt,refine_f,ndimage.gaussian_filter1d(likelihood,1./(f[1]-f[0]),axis=0),seeds)
+        candidates=np.vstack([_refine_curves(tt,refine_f,likelihood,candidates),initial_seeds])
+        best_z=_curve_significance(refine_data,refine_f,curve,likelihood=likelihood);best=None
+        for candidate in candidates:
+            predicted=ideal_curve(track.t,*candidate)
+            if not(40<=candidate[0]<=cfg.fmax and 5<=candidate[1]<=150 and 50<=candidate[2]<50000):continue
+            if np.sqrt(np.mean((predicted-track.f)**2))>max(1.,fit['rms_hz']):continue
+            if abs(candidate[0]-initial[0])>max(10.,.15*initial[0]):continue
+            test=ideal_curve(tt,*candidate)
+            z=_curve_significance(refine_data,refine_f,test,likelihood=likelihood)
+            if z>best_z:best_z=z;best=candidate
+        if best is not None:
+            residual=float(np.sqrt(np.mean((ideal_curve(track.t,*best)-track.f)**2)))
+            track.fit=fit=dict(zip(('f0','v','d_cpa','t_cpa'),map(float,best)),rms_hz=residual)
+            track.f=ideal_curve(track.t,*best);curve=ideal_curve(tt,*best)
+        track._spectral_refined=True
+    brightness=_sample(local,f,curve)
+    evidence=_local_evidence(local,f,curve)
+    support=(ndimage.uniform_filter1d(brightness,25,mode='nearest')>=0.)&(ndimage.uniform_filter1d(evidence,25,mode='nearest')>=.5)
+    core=(tt>=track.t0)&(tt<=track.t1)
+    support|=core
+    support&=(curve>=cfg.fmin)&(curve<=cfg.fmax)
+    support=_close_evidence_gaps(support)
+    # A temporary fade does not end the source forever. Retain later
+    # independently supported plateau segments, without filling the gap.
+    measured=_sample(amp[:,left:right],f,curve)
+    offsets=(-14.,-10.,-8.,8.,10.,14.)
+    noise=np.median([_sample(amp[:,left:right],f,curve+shift)**2 for shift in offsets],axis=0)
+    u=tt-fit['t_cpa'];denominator=_C**2-fit['v']**2
+    emission=(_C**2*u-np.sqrt(_C**2*fit['v']**2*u*u+denominator*fit['d_cpa']**2))/denominator
+    gain=fit['d_cpa']/np.hypot(fit['d_cpa'],fit['v']*emission)
+    observed=core&(brightness>=3)
+    if observed.any():
+        reference=np.median(np.maximum(measured[observed]**2-noise[observed],0)/np.maximum(gain[observed]**2,1e-9))
+        if reference>0:
+            # Median log whitening has negative noise mean. Weak but coherent
+            # plateaus can therefore sit below 0 dB in log space while their
+            # mean power is still above the floor used by the attacker.
+            normalized_power=np.log(2.)*10**(np.clip(evidence,-30,30)/10)
+            support|=ndimage.uniform_filter1d(normalized_power,25,mode='nearest')>=1.15
+            support&=core|(reference*gain**2>=.1*noise)
+            support&=(curve>=cfg.fmin)&(curve<=cfg.fmax)
+            support=_close_evidence_gaps(support)
+    indices=np.flatnonzero(support);selected=[]
+    for part in np.split(indices,np.flatnonzero(np.diff(indices)>1)+1):
+        if len(part)>=2 and (tt[part[-1]]-tt[part[0]]>=cfg.min_duration_s or np.any(core[part])):selected.extend(part)
+    if not selected:return track
+    part=np.asarray(selected,int);grid=tt[part];frequency=curve[part]
+    original=(grid>=track.t0)&(grid<=track.t1)
+    frequency[original]=np.interp(grid[original],track.t,track.f)
+    track.amp=measured[part];track.t=grid;track.f=frequency
+    track._evidence_gated=True;track._source_fragment=True
+    return track
+
+
+
+def _verified_curve_mask(local,f,curve,cfg,likelihood):
+    values=_sample(local,f,curve);evidence=_local_evidence(local,f,curve)
+    support=(ndimage.uniform_filter1d(values,9,mode='nearest')>=0.)&(ndimage.uniform_filter1d(evidence,9,mode='nearest')>=1.)
+    support&=(curve>=cfg.fmin)&(curve<=cfg.fmax)
+    support=_close_evidence_gaps(support)
+    indices=np.flatnonzero(support);accepted=np.zeros(len(curve),bool)
+    whole=_curve_significance(local,f,curve,likelihood=likelihood)
+    for part in np.split(indices,np.flatnonzero(np.diff(indices)>1)+1):
+        if len(part)<2 or (part[-1]-part[0])*cfg.hop_s<cfg.min_duration_s:continue
+        if np.mean(evidence[part])<1.:continue
+        if whole<4.5 and _curve_significance(local,f,curve,part,likelihood)<5.:continue
+        accepted[part]=True
+    return accepted
 
 
 def _probe_known_harmonics(tracks,t,f,amp,s,cfg):
     """Probe every in-band harmonic of an established sweep; no blind births."""
     found=[]
+    observations=getattr(s,'ridge_view',s)
+    magnitude=getattr(s,'ridge_amplitude',amp)
     # A confirmed ridge can have a short foreground occlusion. Probe its
     # continuous shared factor, rather than dropping harmonics in that gap.
     chains={}
     for tr in tracks:
-        if tr.kind=='doppler' and tr.harmonic==1 and len(tr.t)>=2:
-            chains.setdefault(tr.group,[]).append(tr)
+        if tr.kind=='doppler' and tr.harmonic==1 and len(tr.t)>=2 and np.median(tr.f)>=40:
+            offset=getattr(tr,'_ridge_offset_hz',0.)
+            if offset:
+                parent=Track(tr.t.copy(),tr.f-offset,tr.amp.copy(),tr.doppler_score,None,1,tr.group,'doppler')
+                parent._ridge_offset_hz=offset
+            else:parent=tr
+            chains.setdefault(tr.group,[]).append(parent)
     families={}
     for tr in tracks:
         if tr.kind=='doppler' and len(tr.t)>=2:families.setdefault(tr.group,[]).append(tr)
@@ -599,66 +861,74 @@ def _probe_known_harmonics(tracks,t,f,amp,s,cfg):
                 if np.sqrt(np.mean(error**2))<.5:
                     family_confirmed.add(group);break
             if group in family_confirmed:break
-        if group not in chains and group in family_confirmed:
+        if group not in chains:
             lowest=min(members,key=lambda q:q.harmonic)
-            root=lowest.f/lowest.harmonic
+            offset=getattr(lowest,'_ridge_offset_hz',0.)
+            root=(lowest.f-offset)/lowest.harmonic
             if np.median(root)>=40:
-                chains[group]=[Track(lowest.t.copy(),root,lowest.amp.copy(),lowest.doppler_score,None,1,group,'doppler')]
+                parent=Track(lowest.t.copy(),root,lowest.amp.copy(),lowest.doppler_score,None,1,group,'doppler')
+                parent._ridge_offset_hz=offset;chains[group]=[parent]
+            else:
+                # Do not infer a virtual low fundamental. Each actually
+                # observed tone can still verify its own upper multiples;
+                # preserve its original order when emitting those tracks.
+                anchors=[]
+                for observed in members:
+                    if np.median(observed.f)<40:continue
+                    offset=getattr(observed,'_ridge_offset_hz',0.)
+                    parent=Track(observed.t.copy(),observed.f-offset,observed.amp.copy(),observed.doppler_score,None,1,group,'doppler')
+                    parent._ridge_offset_hz=offset
+                    parent._order_stride=observed.harmonic;parent._maximum_multiple=4
+                    anchors.append(parent)
+                if anchors:chains[group]=anchors
     parents=[]
     for group,pieces in chains.items():
         pieces=sorted(pieces,key=lambda q:q.t0)
         current=pieces[0]
         for nxt in pieces[1:]:
             gap=nxt.t0-current.t1
-            if 0<=gap<=6 and abs(nxt.f[0]-current.f[-1])<=max(3,.03*np.median(current.f)):
+            same_order=getattr(current,'_order_stride',1)==getattr(nxt,'_order_stride',1) and abs(getattr(current,'_ridge_offset_hz',0.)-getattr(nxt,'_ridge_offset_hz',0.))<.5
+            if same_order and gap<0 and nxt.t1<=current.t1:
+                other=np.interp(nxt.t,current.t,current.f)
+                if np.sqrt(np.mean((nxt.f-other)**2))<.65:continue
+            if same_order and 0<=gap<=1.5 and abs(nxt.f[0]-current.f[-1])<=max(3,.03*np.median(current.f)):
                 grid=np.arange(current.t0,nxt.t1+.01,.25)
                 times=np.r_[current.t,nxt.t];order=np.argsort(times)
+                stride=getattr(current,'_order_stride',1);maximum=getattr(current,'_maximum_multiple',np.inf);offset=getattr(current,'_ridge_offset_hz',0.)
                 current=Track(grid,np.interp(grid,times[order],np.r_[current.f,nxt.f][order]),np.interp(grid,times[order],np.r_[current.amp,nxt.amp][order]),max(current.doppler_score,nxt.doppler_score),None,1,group,'doppler')
+                current._order_stride=stride;current._maximum_multiple=maximum;current._ridge_offset_hz=offset
             else:
                 parents.append(current);current=nxt
         parents.append(current)
     for parent in parents:
-        if parent.kind!='doppler' or parent.harmonic!=1 or len(parent.t)<2 or (parent.t1-parent.t0<(8 if parent.group in family_confirmed else 20)) or np.median(parent.f)<40:continue
+        if parent.kind!='doppler' or parent.harmonic!=1 or len(parent.t)<2 or (parent.t1-parent.t0<cfg.min_duration_s) or np.median(parent.f)<40:continue
         left=np.searchsorted(t,parent.t0);right=np.searchsorted(t,parent.t1,side='right')
         tt=t[left:right]
         if len(tt)<16:continue
         base=np.interp(tt,parent.t,parent.f)
-        local=s[:,left:right]
-        if parent.group not in family_confirmed:
-            # An isolated ridge, especially a short bird/voice fundamental,
-            # cannot seed a lattice. Confirm a sibling without searching a
-            # frequency corridor or selecting only its bright frames.
-            sibling=False
-            for order in range(2,13):
-                candidate=order*base;inside=(candidate>=f[0])&(candidate<=f[-1])
-                if np.mean(inside)<.8:continue
-                evidence=_sample(local,f,candidate)[inside]
-                if np.median(evidence)>=5 and np.mean(evidence>=5)>=.65:
-                    sibling=True;break
-            if not sibling:continue
-        for k in range(2,int(cfg.fmax/max(np.min(base),1))+1):
-            curve=k*base
-            values=_sample(local,f,curve)
-            contrast=_brightness(local,f,curve)
-            # Test an unbiased whole-parent statistic before selecting bright
-            # islands; conditioning on positive noise alone invents siblings.
-            if np.mean(contrast)<.6:continue
-            support=(ndimage.uniform_filter1d(values,size=7,mode='nearest')>=0.)&(ndimage.uniform_filter1d(contrast,size=7,mode='nearest')>=.5)
-            support&=(curve>=cfg.fmin)&(curve<=cfg.fmax)
-            # An observed harmonic confirms its order, not only a collection
-            # of disconnected islands. Follow the parent's continuous factor.
-            support=ndimage.binary_closing(support,structure=np.ones(3))
-            evidence_indices=np.flatnonzero(support)
-            runs=np.split(evidence_indices,np.flatnonzero(np.diff(evidence_indices)>1)+1)
-            observed=any(len(run)>=2 and tt[run[-1]]-tt[run[0]]>=cfg.min_duration_s and np.mean(values[run])>=.75 and np.mean(contrast[run])>=1. for run in runs)
-            if not observed:continue
-            valid=(curve>=cfg.fmin)&(curve<=cfg.fmax)
-            for part in np.split(np.flatnonzero(valid),np.flatnonzero(np.diff(np.flatnonzero(valid))>1)+1):
-                if len(part)<2:continue
+        maximum=min(int(cfg.fmax/max(np.min(base),1)),getattr(parent,'_maximum_multiple',np.inf))
+        stride=getattr(parent,'_order_stride',1);first_order=2 if stride>1 else 1
+        if maximum<first_order:continue
+        last=min(len(f),int(np.searchsorted(f,maximum*np.max(base)+82))+1)
+        probe_f=f[:last]
+        long_view=s[:last,left:right]
+        views=[(long_view,_llr(long_view))]
+        if observations is not s:
+            adaptive=observations[:last,left:right];views.append((adaptive,_llr(adaptive)))
+        for k in range(first_order,int(maximum)+1):
+            offset=getattr(parent,'_ridge_offset_hz',0.)
+            curve=k*base+offset;verified=np.zeros(len(tt),bool)
+            for view,likelihood in views:
+                verified|=_verified_curve_mask(view,probe_f,curve,cfg,likelihood)
+            indices=np.flatnonzero(verified)
+            for part in np.split(indices,np.flatnonzero(np.diff(indices)>1)+1):
+                if len(part)<2 or tt[part[-1]]-tt[part[0]]<cfg.min_duration_s:continue
                 grid=tt[part];frequency=curve[part]
-                amplitude=_sample(amp[:,left:right],f,curve)[part]
-                if any(q.harmonic==k and q.group==parent.group and q.t0<=grid[0] and q.t1>=grid[-1] for q in found):continue
-                found.append(Track(grid.copy(),frequency.copy(),amplitude.copy(),max(cfg.doppler_threshold,parent.doppler_score),None,k,parent.group,'doppler'))
+                amplitude=_sample(magnitude[:,left:right],f,curve)[part]
+                if any(q.harmonic==k*stride and q.group==parent.group and q.t0<=grid[0] and q.t1>=grid[-1] for q in found):continue
+                piece=Track(grid.copy(),frequency.copy(),amplitude.copy(),max(cfg.doppler_threshold,parent.doppler_score),None,k*stride,parent.group,'doppler')
+                piece._evidence_gated=True;piece._source_fragment=True;piece._ridge_offset_hz=offset
+                found.append(piece)
     return found
 
 
@@ -667,7 +937,9 @@ def detect_tracks(x,sr,cfg=DetectConfig()) -> list[Track]:
 
     Blind search uses summed exponential-power log likelihoods, validated
     against reversed-time controls and an empirical Gumbel maximum model.
-    Every in-band predicted harmonic of an accepted source is returned.
+    Harmonics are proposed for every source and returned on verified spans.
+    A Track.fit f0 is the intrinsic frequency of that individual tone; its
+    harmonic field separately records its order within the source family.
     The nominal 0.1 false source/hour calibration is not a universal guarantee.
     """
     x=np.asarray(x)
@@ -815,7 +1087,9 @@ def detect_tracks(x,sr,cfg=DetectConfig()) -> list[Track]:
     bright=_bright_ridges(t,f,amp,s,cfg)
     bright_offset=max((q.group for q in tracks),default=-1)+1
     for tr in bright:tr.group+=bright_offset
+    for q in bright:q._integration_parent=True
     tracks.extend(bright)
+    native_support=[]
     trusted_groups=set()
     if track_ridges is not None:
         # Native ridges already verify multiresolution peaks and harmonic
@@ -827,8 +1101,33 @@ def detect_tracks(x,sr,cfg=DetectConfig()) -> list[Track]:
             ridge_s=getattr(s,'ridge_view',s)
         else:
             ridge_s=RidgeSpectrum(getattr(s,'ridge_view',s),getattr(s,'ridge_amplitude',amp))
-        ridge_tracks=track_ridges(ridge_s,t,f,cfg)
+        # Bound source consolidation to ten-minute neighborhoods. A short
+        # pass must not be diluted by a steady carrier elsewhere in an hour.
+        bounds=[]
+        for begin in np.arange(t[0],t[-1],540.):
+            left=int(np.searchsorted(t,begin));right=int(np.searchsorted(t,begin+600.))
+            if right-left<max(2,int(cfg.min_duration_s/cfg.hop_s)):continue
+            bounds.append((left,right))
+            if right==len(t):break
+        def run_native(bound):
+            left,right=bound;view=ridge_s[:,left:right]
+            # RidgeSpectrum slices inherit a diagnostic list by reference.
+            # Each independent worker must own that mutable bookkeeping.
+            if hasattr(view,'calibration'):view.calibration=[]
+            return track_ridges(view,t[left:right],f,cfg)
+        if len(bounds)>1:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=min(3,len(bounds))) as workers:
+                chunks=list(workers.map(run_native,bounds))
+        else:chunks=[run_native(bound) for bound in bounds]
+        ridge_tracks=[];next_group=0
+        for chunk in chunks:
+            mapping={group:next_group+i for i,group in enumerate(sorted({q.group for q in chunk}))}
+            next_group+=len(mapping)
+            for q in chunk:q.group=mapping[q.group]
+            ridge_tracks.extend(chunk)
         ridge_tracks=[q for q in ridge_tracks if q.kind!='doppler' or q.doppler_score>=cfg.doppler_threshold]
+        native_support=[Track(q.t.copy(),q.f.copy(),q.amp.copy(),q.doppler_score,None,q.harmonic,q.group,q.kind) for q in ridge_tracks if len(q.t)>=2]
         offset=max((q.group for q in tracks),default=-1)+1
         ridge_tracks=[q for q in ridge_tracks if len(q.t)>=2 and len(q.f)==len(q.t) and len(q.amp)==len(q.t)]
         native_families={}
@@ -885,16 +1184,19 @@ def detect_tracks(x,sr,cfg=DetectConfig()) -> list[Track]:
                     if abs(first.f[-1]+slope*gap-second.f[0])<.8:
                         tt=np.r_[old.t,q.t];order=np.argsort(tt)
                         old.f=np.r_[old.f,q.f][order];old.amp=np.r_[old.amp,q.amp][order];old.t=tt[order]
+                        old._integration_parent=getattr(old,'_integration_parent',False) or getattr(q,'_integration_parent',False)
                         duplicate=True;break
                 continue
             residual=q.f[m]-np.interp(q.t[m],old.t,old.f)
-            if np.sqrt(np.mean(residual**2))<.5 and np.mean(abs(residual)<1)>.9:
+            if np.sqrt(np.mean(residual**2))<1. and np.mean(abs(residual)<1)>.8:
                 duplicate=True
+                old._integration_parent=getattr(old,'_integration_parent',False) or getattr(q,'_integration_parent',False)
                 if q.group in trusted_groups:
                     trusted_groups.add(old.group)
                     old.group=q.group;old.harmonic=q.harmonic
+                    if hasattr(q,'_ridge_offset_hz'):old._ridge_offset_hz=q._ridge_offset_hz
                 if old.fit is None and q.fit is not None:
-                    old.group=q.group;old.harmonic=q.harmonic
+                    old.group=q.group;old.harmonic=q.harmonic;old.fit=q.fit
                 # Keep the lower-error frequency estimates, extend its span.
                 outside=(q.t<old.t0)|(q.t>old.t1)
                 tt=np.r_[old.t,q.t[outside]];order=np.argsort(tt)
@@ -912,15 +1214,25 @@ def detect_tracks(x,sr,cfg=DetectConfig()) -> list[Track]:
         before=parent.f.copy()
         left=max(0,int((parent.t0-1)*sr));right=min(len(x),int((parent.t1+1)*sr))
         parent.t-=left/sr
-        _zoom_refine(parent,x[left:right],sr)
+        if parent.fit.get('rms_hz',1)>.5:_zoom_refine(parent,x[left:right],sr)
         parent.t+=left/sr
         for tr in members:
             if tr is not parent:
                 tr.f*=np.interp(tr.t,parent.t,parent.f/np.maximum(before,1e-12),left=1.,right=1.)
+    parametric=[(i,q) for i,q in enumerate(tracks) if q.kind=='doppler' and q.fit is not None]
+    if len(parametric)>=4:
+        from concurrent.futures import ThreadPoolExecutor
+        def extend_one(item):
+            index,track=item
+            return index,_extend_parametric(track,t,f,amp,s,cfg)
+        with ThreadPoolExecutor(max_workers=3) as workers:
+            for index,track in workers.map(extend_one,parametric):tracks[index]=track
+    else:
+        tracks=[_extend_parametric(q,t,f,amp,s,cfg) for q in tracks]
     motion_families=_motion_families(tracks)|trusted_groups
     classified=[]
     for tr in tracks:
-        kind=_motion_kind(tr,cfg,'verified' if tr.group in trusted_groups else tr.group in motion_families)
+        kind=_motion_kind(tr,cfg,'source_fragment' if getattr(tr,'_source_fragment',False) else ('verified' if tr.group in trusted_groups else tr.group in motion_families))
         if kind is None:continue
         tr.kind=kind
         if kind=='stationary':tr.doppler_score=0.
@@ -943,6 +1255,7 @@ def detect_tracks(x,sr,cfg=DetectConfig()) -> list[Track]:
                     trusted_groups.add(base.group);motion_families.add(base.group)
                 q.group=base.group;q.harmonic=k*base.harmonic
                 break
+    if track_ridges is not None:tracks=_clip_integration_parents(tracks,native_support,cfg)
     probes=_probe_known_harmonics(tracks,t,f,amp,s,cfg)
     tracks.extend(probes)
     probe_ids={id(q) for q in probes}
@@ -958,7 +1271,7 @@ def detect_tracks(x,sr,cfg=DetectConfig()) -> list[Track]:
             low=np.clip(np.floor(bins).astype(int),0,len(f)-2);w=np.clip(bins-low,0,1)
             brightness=s[low,columns]*(1-w)+s[low+1,columns]*w
             valid&=ndimage.uniform_filter1d(brightness,size=7,mode='nearest')>=3
-        if tr.kind=='doppler' and tr.group not in trusted_groups and id(tr) not in probe_ids:
+        if tr.kind=='doppler' and tr.group not in trusted_groups and not getattr(tr,'_evidence_gated',False) and id(tr) not in probe_ids:
             # Predictions outside the attacker band require independent local
             # evidence in 1.5 s neighborhoods. Never bridge unsupported gaps.
             indices=np.clip(np.searchsorted(t,tr.t),0,len(t)-1)
@@ -996,11 +1309,13 @@ def detect_tracks(x,sr,cfg=DetectConfig()) -> list[Track]:
                 raw_verified=ndimage.uniform_filter1d(tonal,size=7,mode='nearest')>=4
                 valid&=verified|raw_verified
         indices=np.flatnonzero(valid)
-        for part in np.split(indices,np.flatnonzero(np.diff(indices)>1)+1):
+        for part in np.split(indices,np.flatnonzero((np.diff(indices)>1)|(np.diff(tr.t[indices])>.26))+1):
             minimum_duration=cfg.min_duration_s
             if len(part)<2 or tr.t[part[-1]]-tr.t[part[0]]<minimum_duration:continue
             piece=Track(tr.t[part],tr.f[part],tr.amp[part],tr.doppler_score,tr.fit,tr.harmonic,tr.group,tr.kind)
-            kind=_motion_kind(piece,cfg,'verified' if tr.group in trusted_groups else tr.group in motion_families)
+            piece._source_fragment=getattr(tr,'_source_fragment',False)
+            if hasattr(tr,'_ridge_offset_hz'):piece._ridge_offset_hz=tr._ridge_offset_hz
+            kind=_motion_kind(piece,cfg,'source_fragment' if piece._source_fragment else ('verified' if tr.group in trusted_groups else tr.group in motion_families))
             if kind is None:continue
             piece.kind=kind
             if kind=='stationary':
@@ -1029,7 +1344,7 @@ def detect_tracks(x,sr,cfg=DetectConfig()) -> list[Track]:
     kept=[]
     for q in merged:
         if len(q.t)<2:continue
-        kind=_motion_kind(q,cfg,'verified' if q.group in trusted_groups else q.group in motion_families)
+        kind=_motion_kind(q,cfg,'source_fragment' if getattr(q,'_source_fragment',False) else ('verified' if q.group in trusted_groups else q.group in motion_families))
         if kind is None:continue
         q.kind=kind
         if kind=='doppler' and q.group not in supported_groups:continue

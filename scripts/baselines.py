@@ -207,7 +207,8 @@ def write_md(rows, verdicts):
     L += ["## Method × metric (medians)", "",
           "Visibility medians use only clips whose curve was detectable before cleaning "
           f"(z > 3 or box ridge cells > 2%: {', '.join(sorted(visible)) or 'none'}). "
-          "Fidelity medians use all clips.", "",
+          "Fidelity medians use the same clips: on clips with no visible curve dopplerscrub "
+          "rightly does nothing, which would flatter its damage numbers. Per-clip tables are below.", "",
           "| method | AF z after (synth) ↓ | integrated residual ≤-10 dB (synth, n/N) | exact contrast dB ↓ | "
           "tolerant ridge excess dB ↓ | event-box ridge cells % (real) ↓ | SNR outside dB ↑ | speech SNR dB ↑ | "
           "LSD dB ↓ | LSD >450 Hz dB ↓ | STOI-like ↑ | TF modified (all / 40–450 / >450) ↓ | runtime s |",
@@ -224,11 +225,11 @@ def write_md(rows, verdicts):
             f"**{m}**", fnum(med([r["af_z"] for r in syn])), f"{npass}/{len(syn)}",
             fnum(med([r["contrast_db"] for r in syn])), fnum(med([r["ridge_excess_db"] for r in syn])),
             fnum(100 * med([r["box_hi"] for r in real])),
-            fnum(med([r["snr_outside_db"] for r in rs])), fnum(med([r["speech_snr_db"] for r in rs])),
-            fnum(med([r["lsd_db"] for r in rs]), 2), fnum(med([r["lsd_above450_db"] for r in rs]), 2),
-            fnum(med([r["stoi_like"] for r in rs]), 3),
-            f"{fnum(100 * med([r['tf_mod_all'] for r in rs]))}% / {fnum(100 * med([r['tf_mod_40_450'] for r in rs]))}% / "
-            f"{fnum(100 * med([r['tf_mod_above450'] for r in rs]))}%",
+            fnum(med([r["snr_outside_db"] for r in vis])), fnum(med([r["speech_snr_db"] for r in vis])),
+            fnum(med([r["lsd_db"] for r in vis]), 2), fnum(med([r["lsd_above450_db"] for r in vis]), 2),
+            fnum(med([r["stoi_like"] for r in vis]), 3),
+            f"{fnum(100 * med([r['tf_mod_all'] for r in vis]))}% / {fnum(100 * med([r['tf_mod_40_450'] for r in vis]))}% / "
+            f"{fnum(100 * med([r['tf_mod_above450'] for r in vis]))}%",
             fnum(med([r["runtime_s"] for r in rs]), 1)]) + " |")
     L += ["", "Reference (no processing): exact contrast and ridge excess of the ORIGINAL, median over "
           f"visible synthetic clips: {fnum(med([r.get('contrast_orig_db') for r in by_m['bandstop'] if r['clip'] in visible and 'contrast_orig_db' in r]))} dB / "
@@ -256,7 +257,11 @@ def write_md(rows, verdicts):
           "et al. 2011 (`evaluate.stoi_like`; pystoi/PESQ/ViSQOL are not dependencies). It is only "
           "indicative on synthetic tones.",
           "- **TF modified**: share of active 46 ms TF cells whose change exceeds −20 dB of the cell's "
-          "original power.", "",
+          "original power. At ~16 Hz bins a ±2 Hz corridor still marks a whole cell, so targeted "
+          "methods read high in the 40–450 column. Compare methods, not absolute values.",
+          "- **bandstop_brick** is not in the original brief: it was added because the specified "
+          "Butterworth band-stop attenuates only ~10–20 dB near 40/450 Hz, which a per-bin-whitening "
+          "attacker undoes, and the claim deserves the strongest blanket baseline.", "",
           "## Per clip", ""]
     clips = []
     for r in rows:

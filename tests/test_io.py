@@ -210,3 +210,33 @@ def test_multiple_audio_streams_and_subtitles(tmp_path, tone_wav):
     m4 = io.probe(tmp_path / "out.mp4")
     assert m4["subtitle_streams"][0]["codec"] == "mov_text"
     assert [a["codec"] for a in m4["audio_streams"]] == ["aac", "opus"]
+
+
+def test_harmless_stream_tags_kept_everything_else_stripped(tmp_path, video_mp4):
+    """language/handler_name survive the strip; a handler naming a device brand
+    does not; location/creation_time/make never do."""
+    src = tmp_path / "tags.mov"
+    ff("-i", str(video_mp4), "-map", "0:v", "-map", "0:a", "-c", "copy",
+       "-metadata:s:v:0", "handler_name=GoPro AVC", "-metadata:s:v:0", "language=fra",
+       "-metadata:s:a:0", "handler_name=Core Media Audio", "-metadata:s:a:0", "language=eng",
+       "-metadata", f"location={LOC}", "-metadata", "make=GoPro", str(src))
+    x, sr, meta = io.load(src)
+    out = tmp_path / "out.mov"
+    io.save(src, out, x, sr, meta)
+    m = io.probe(out)
+    v, a = m["video_streams"][0]["tags"], m["audio_streams"][0]["tags"]
+    assert v.get("language") == "fra" and "gopro" not in v.get("handler_name", "").lower()
+    assert a.get("language") == "eng" and a.get("handler_name") == "Core Media Audio"
+    blob = json.dumps(all_tags(out)[0]).lower()
+    assert "37.77" not in blob and "creation_time" not in blob and "gopro" not in blob
+    assert b"37.7749" not in out.read_bytes()
+
+
+def test_sensitive_tags_report(video_mp4, tone_wav):
+    st = io.sensitive_tags(io.probe(video_mp4))
+    assert "location" in st["location"] and "location-eng" in st["location"]
+    assert "creation_time" in st["other"] and "title" in st["other"]
+    assert st["chapters"] == 1
+    assert not any(k.endswith(":language") for k in st["other"])      # kept, not reported
+    wav = io.sensitive_tags(io.probe(tone_wav[0]))
+    assert wav == {"location": [], "other": [], "chapters": 0, "data_streams": []}
