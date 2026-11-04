@@ -815,16 +815,33 @@ def _extend_parametric(track,t,f,amp,s,cfg):
 
 
 
-def _verified_curve_mask(local,f,curve,cfg,likelihood):
-    values=_sample(local,f,curve);evidence=_local_evidence(local,f,curve)
+def _background_image(s,f):
+    """The frequency-median background _local_evidence uses, for every bin at
+    once (same band-dependent widths), so repeated curve probes only sample it."""
+    s=np.asarray(s);df=f[1]-f[0];out=np.empty(s.shape,np.float32)
+    for lower,upper,width in ((0,450,18.),(450,700,80.),(700,np.inf,160.)):
+        rows=np.flatnonzero((f>lower)&(f<=upper))
+        if not len(rows):continue
+        size=max(5,int(round(width/df))|1)
+        a=max(0,rows[0]-size//2);b=min(len(f),rows[-1]+size//2+1)
+        out[rows]=_frequency_median(s[a:b],size)[rows-a]
+    rows=np.flatnonzero(f<=0)
+    if len(rows):out[rows]=s[rows]
+    return out
+
+
+def _verified_curve_mask(local,f,curve,cfg,likelihood,background=None):
+    values=_sample(local,f,curve)
+    evidence=_local_evidence(local,f,curve) if background is None else values-_sample(background,f,curve)
     support=(ndimage.uniform_filter1d(values,9,mode='nearest')>=0.)&(ndimage.uniform_filter1d(evidence,9,mode='nearest')>=1.)
     support&=(curve>=cfg.fmin)&(curve<=cfg.fmax)
     support=_close_evidence_gaps(support)
     indices=np.flatnonzero(support);accepted=np.zeros(len(curve),bool)
-    whole=_curve_significance(local,f,curve,likelihood=likelihood)
+    whole=None
     for part in np.split(indices,np.flatnonzero(np.diff(indices)>1)+1):
         if len(part)<2 or (part[-1]-part[0])*cfg.hop_s<cfg.min_duration_s:continue
         if np.mean(evidence[part])<1.:continue
+        if whole is None:whole=_curve_significance(local,f,curve,likelihood=likelihood)
         if whole<4.5 and _curve_significance(local,f,curve,part,likelihood)<5.:continue
         accepted[part]=True
     return accepted

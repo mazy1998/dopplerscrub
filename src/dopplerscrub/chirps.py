@@ -48,9 +48,27 @@ def _views(y, rate, fmin, fmax, windows=WINDOWS, hop=HOP, df=2.):
         db -= np.median(db, axis=1, keepdims=True)
         # local contrast: a tone stands above its +-(several main lobes) neighbourhood
         width = int(max(31, 12 / w / df)) | 1
-        local = ndimage.median_filter(db, size=(width, 1), mode='nearest')
-        out.append((db - local).astype(np.float32))
+        out.append((db - _block_median(db, width)).astype(np.float32))
     return t, f, out
+
+
+def _block_median(db, width):
+    """Background along frequency: medians of half-overlapping blocks of
+    `width` bins, linearly interpolated (a running median is ~10x slower and
+    the background only needs to be smooth on that scale)."""
+    F = db.shape[0]; step = max(1, width // 2)
+    starts = np.arange(0, max(F - width, 0) + 1, step)
+    if starts[-1] + width < F:
+        starts = np.r_[starts, F - width]
+    centres = starts + (min(width, F) - 1) / 2
+    med = np.stack([np.median(db[a:a + width], axis=0) for a in starts])
+    rows = np.arange(F)
+    hi = np.clip(np.searchsorted(centres, rows), 1, len(centres) - 1) if len(centres) > 1 else np.zeros(F, int)
+    if len(centres) == 1:
+        return np.broadcast_to(med[0], db.shape)
+    lo = hi - 1
+    w = np.clip((rows - centres[lo]) / (centres[hi] - centres[lo]), 0, 1)[:, None]
+    return (1 - w) * med[lo] + w * med[hi]
 
 
 SLOPES = np.r_[0., 3., 6., 9., 13., 18., 24., 31., 40., 50., 62., 76., 92., 110., 130., 155., 185., 220.]
@@ -89,7 +107,7 @@ def _track(A, S, t, f, thr, max_gap=2):
         offers = []
         for i, p in enumerate(active):
             gap = j - p['j'][-1]
-            slope = float(np.median(p['s'][-4:]))
+            ss = p['s'][-4:]; slope = sum(ss) / len(ss)
             pred = p['f'][-1] + slope * gap * HOP
             tol = 3. + .03 * abs(slope) + 2. * (gap - 1)
             for k in np.flatnonzero(abs(hz - pred) < tol):

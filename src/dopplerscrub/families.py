@@ -229,9 +229,9 @@ def _recentre(view, f, curve, radius):
     return ndimage.gaussian_filter1d(off, 3)
 
 
-def probe(F, t, f, s, amp, cfg, group, max_order=None, observed=(), eps=0., skip_multiples_of=None, unobserved_z=8., measured=None):
+def probe(F, t, f, s, amp, cfg, group, max_order=None, observed=(), eps=0., skip_multiples_of=None, unobserved_z=8., measured=None, backgrounds=None):
     """Evidence-gated harmonic tracks k*F(t) for every in-band k."""
-    from .detect import _curve_significance, _llr, _sample, _verified_curve_mask
+    from .detect import _background_image, _curve_significance, _llr, _sample, _verified_curve_mask
     views = [np.asarray(s)]
     ridge = getattr(s, 'ridge_view', None)
     if ridge is not None:
@@ -249,7 +249,10 @@ def probe(F, t, f, s, amp, cfg, group, max_order=None, observed=(), eps=0., skip
     if max_order:
         kmax = min(kmax, max_order)
     out = []
+    if backgrounds is None:
+        backgrounds = [_background_image(v, f) for v in views]
     lik = [(v[:, left:right], np.clip(_llr(v[:, left:right]), -1, 20)) for v in views]
+    bgs = [b[:, left:right] for b in backgrounds]
     for k in range(1, kmax + 1):
         if skip_multiples_of and k % skip_multiples_of == 0:
             continue
@@ -266,8 +269,8 @@ def probe(F, t, f, s, amp, cfg, group, max_order=None, observed=(), eps=0., skip
         radius = min(1., max(.6, .002 * k * float(np.median(Fc))))
         curve = curve + _recentre(lik[-1][0], f, curve, radius)
         verified = np.zeros(len(tt), bool)
-        for view, L in lik:
-            verified |= _verified_curve_mask(view, f, curve, cfg, L)
+        for (view, L), bg in zip(lik, bgs):
+            verified |= _verified_curve_mask(view, f, curve, cfg, L, bg)
         idx = np.flatnonzero(verified)
         for part in np.split(idx, np.flatnonzero(np.diff(idx) > 1) + 1):
             if len(part) < 2 or tt[part[-1]] - tt[part[0]] < cfg.min_duration_s:
@@ -310,6 +313,9 @@ def apply_families(tracks, t, f, s, amp, cfg):
             found.append(fam)
     if not found:
         return tracks
+    from .detect import _background_image
+    views = [np.asarray(s)] + ([np.asarray(s.ridge_view)] if getattr(s, 'ridge_view', None) is not None else [])
+    bgs = [_background_image(v, f) for v in views]
     next_group = max((q.group for q in tracks), default=-1) + 1
     new = []; relabel = {}; factors = {}; measured_span = {}
     # parents (eps == 0) before their offset families; larger sources first
@@ -324,7 +330,7 @@ def apply_families(tracks, t, f, s, amp, cfg):
         factors[id(fam)] = F
         span = measured_span.get(id(fam), measured_span.get(id(found[fam['parent']])) if fam['parent'] is not None else None)
         gid = next_group; next_group += 1
-        probes = probe(F, t, f, s, amp, cfg, gid, observed=set(int(n) for n in orders), eps=fam['eps'], measured=span)
+        probes = probe(F, t, f, s, amp, cfg, gid, observed=set(int(n) for n in orders), eps=fam['eps'], measured=span, backgrounds=bgs)
         if not fam['eps']:
             # The sieve takes the largest f0 consistent with the members; a
             # finer lattice (f0/2, f0/3) is accepted only on new evidence:
@@ -332,7 +338,7 @@ def apply_families(tracks, t, f, s, amp, cfg):
             for m in (2, 3):
                 if np.nanmin(F) / m < 12.:
                     break
-                extra = probe(F / m, t, f, s, amp, cfg, gid, skip_multiples_of=m, measured=span,
+                extra = probe(F / m, t, f, s, amp, cfg, gid, skip_multiples_of=m, measured=span, backgrounds=bgs,
                               max_order=m * (max(int(n) for n in orders) + 2))
                 if len({q.harmonic for q in extra}) >= 2:
                     for q in probes:
