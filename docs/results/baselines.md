@@ -26,14 +26,14 @@ Visibility and fidelity medians use only clips whose curve was detectable before
 
 Clips with a curve visible before cleaning (6): colsto_2050_2250, overlap, prop_pass, prop_quiet, speech, stereo.
 
-| method | AF z after (synth) ↓ | integrated residual ≤-10 dB (synth, n/N) | exact contrast dB ↓ | tolerant ridge excess dB ↓ | event-box ridge cells % (real) ↓ | box-free ridges still z>3 (Σ still / Σ before; new) ↓ | persistent cells % ↓ | SNR outside dB ↑ | speech SNR dB ↑ | LSD dB ↓ | LSD >450 Hz dB ↓ | STOI-like ↑ | TF modified (all / 40–450 / >450) ↓ | runtime s † |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| **dopplerscrub** | -0.2 | 1/4 | 0.2 | -0.0 | 10.6 | 30 / 49; 17 | 15.1 | 21.6 | 13.4 | 1.15 | 0.93 | 0.933 | 8.4% / 42.8% / 6.6% | 7.1 |
-| **oracle** | -1.8 | 2/4 | -0.2 | -0.1 | – | – | – | 32.2 | 20.4 | 0.54 | 0.04 | 0.970 | 1.7% / 32.6% / 0.1% | 0.5 |
-| **bandstop** | 1.8 | 0/4 | 0.6 | 0.1 | 10.0 | 14 / 49; 4 | 12.0 | 7.7 | 8.6 | 8.74 | 0.33 | 0.686 | 6.2% / 100.0% / 0.9% | 0.1 |
-| **bandstop_brick** | -0.3 | 2/4 | 0.0 | 0.0 | 2.6 | 0 / 49; 3 | 5.4 | 6.9 | 7.5 | 9.81 | 1.58 | 0.638 | 6.1% / 100.0% / 0.7% | 0.1 |
-| **noise** | 4.2 | 0/4 | 0.8 | 0.2 | 7.0 | 39 / 49; 6 | 8.4 | 2.1 | -1.2 | 2.47 | 0.99 | 0.673 | 8.1% / 99.5% / 2.5% | 0.1 |
-| **jitter** | 20.9 | 0/4 | 2.4 | 0.7 | 17.9 | 44 / 49; 13 | 19.1 | 1.8 | -2.9 | 5.84 | 5.99 | 0.908 | 98.9% / 96.5% / 99.4% | 0.0 |
+| method | AF z after (synth) ↓ | integrated residual ≤-10 dB (synth, n/N) | exact contrast dB ↓ | tolerant ridge excess dB ↓ | event-box ridge cells % (real) ↓ | box-free ridges still z>3 (Σ still / Σ before; new) ↓ | persistent cells % ↓ | dopfast usable events Σ before → after; pass unknown / known clock ↑ | SNR outside dB ↑ | speech SNR dB ↑ | LSD dB ↓ | LSD >450 Hz dB ↓ | STOI-like ↑ | TF modified (all / 40–450 / >450) ↓ | runtime s † |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **dopplerscrub** | -0.2 | 1/4 | 0.2 | -0.0 | 10.6 | 30 / 49; 17 | 15.1 | – | 21.6 | 13.4 | 1.15 | 0.93 | 0.933 | 8.4% / 42.8% / 6.6% | 7.1 |
+| **oracle** | -1.8 | 2/4 | -0.2 | -0.1 | – | – | – | – | 32.2 | 20.4 | 0.54 | 0.04 | 0.970 | 1.7% / 32.6% / 0.1% | 0.5 |
+| **bandstop** | 1.8 | 0/4 | 0.6 | 0.1 | 10.0 | 14 / 49; 4 | 12.0 | – | 7.7 | 8.6 | 8.74 | 0.33 | 0.686 | 6.2% / 100.0% / 0.9% | 0.1 |
+| **bandstop_brick** | -0.3 | 2/4 | 0.0 | 0.0 | 2.6 | 0 / 49; 3 | 5.4 | – | 6.9 | 7.5 | 9.81 | 1.58 | 0.638 | 6.1% / 100.0% / 0.7% | 0.1 |
+| **noise** | 4.2 | 0/4 | 0.8 | 0.2 | 7.0 | 39 / 49; 6 | 8.4 | – | 2.1 | -1.2 | 2.47 | 0.99 | 0.673 | 8.1% / 99.5% / 2.5% | 0.1 |
+| **jitter** | 20.9 | 0/4 | 2.4 | 0.7 | 17.9 | 44 / 49; 13 | 19.1 | – | 1.8 | -2.9 | 5.84 | 5.99 | 0.908 | 98.9% / 96.5% / 99.4% | 0.0 |
 
 ## Method × metric (medians), held-out
 
@@ -41,19 +41,20 @@ No truth and no boxes: visibility is the box-free check only (`scripts/boxfree.p
 
 Clips with a curve visible before cleaning (6): ho_ambient_plane, ho_atr72, ho_crop_duster, ho_dash8, ho_floatplane, ho_phone_plane.
 
-| method | AF z after (synth) ↓ | integrated residual ≤-10 dB (synth, n/N) | exact contrast dB ↓ | tolerant ridge excess dB ↓ | event-box ridge cells % (real) ↓ | box-free ridges still z>3 (Σ still / Σ before; new) ↓ | persistent cells % ↓ | SNR outside dB ↑ | speech SNR dB ↑ | LSD dB ↓ | LSD >450 Hz dB ↓ | STOI-like ↑ | TF modified (all / 40–450 / >450) ↓ | runtime s † |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| **dopplerscrub** | – | – | – | – | – | 31 / 51; 36 | 29.1 | 5.3 | 5.6 | 1.39 | 0.96 | 0.783 | 26.4% / 77.8% / 21.0% | 14.0 |
-| **bandstop** | – | – | – | – | – | 20 / 51; 7 | 20.2 | 1.5 | 4.6 | 5.55 | 0.14 | 0.701 | 12.4% / 100.0% / 1.9% | 0.4 |
-| **bandstop_brick** | – | – | – | – | – | 3 / 51; 12 | 9.9 | 1.3 | 3.5 | 6.07 | 0.31 | 0.642 | 12.4% / 100.0% / 1.7% | 0.3 |
-| **noise** | – | – | – | – | – | 32 / 51; 33 | 11.0 | 3.5 | 0.9 | 2.14 | 0.96 | 0.716 | 23.6% / 98.1% / 7.8% | 0.3 |
-| **jitter** | – | – | – | – | – | 43 / 51; 13 | 31.4 | -2.2 | -2.8 | 3.30 | 3.30 | 0.897 | 98.5% / 96.5% / 99.2% | 0.1 |
+| method | AF z after (synth) ↓ | integrated residual ≤-10 dB (synth, n/N) | exact contrast dB ↓ | tolerant ridge excess dB ↓ | event-box ridge cells % (real) ↓ | box-free ridges still z>3 (Σ still / Σ before; new) ↓ | persistent cells % ↓ | dopfast usable events Σ before → after; pass unknown / known clock ↑ | SNR outside dB ↑ | speech SNR dB ↑ | LSD dB ↓ | LSD >450 Hz dB ↓ | STOI-like ↑ | TF modified (all / 40–450 / >450) ↓ | runtime s † |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **dopplerscrub** | – | – | – | – | – | 31 / 51; 36 | 29.1 | – | 5.3 | 5.6 | 1.39 | 0.96 | 0.783 | 26.4% / 77.8% / 21.0% | 14.0 |
+| **bandstop** | – | – | – | – | – | 20 / 51; 7 | 20.2 | – | 1.5 | 4.6 | 5.55 | 0.14 | 0.701 | 12.4% / 100.0% / 1.9% | 0.4 |
+| **bandstop_brick** | – | – | – | – | – | 3 / 51; 12 | 9.9 | – | 1.3 | 3.5 | 6.07 | 0.31 | 0.642 | 12.4% / 100.0% / 1.7% | 0.3 |
+| **noise** | – | – | – | – | – | 32 / 51; 33 | 11.0 | – | 3.5 | 0.9 | 2.14 | 0.96 | 0.716 | 23.6% / 98.1% / 7.8% | 0.3 |
+| **jitter** | – | – | – | – | – | 43 / 51; 13 | 31.4 | – | -2.2 | -2.8 | 3.30 | 3.30 | 0.897 | 98.5% / 96.5% / 99.2% | 0.1 |
 
 
 Reference (no processing): exact contrast and ridge excess of the ORIGINAL, median over visible synthetic clips: 3.8 dB / 0.7 dB; AF z 41.3; event-box ridge cells 17.7%.
 
 ### Metric definitions
 
+- **dopfast z** (`evaluate.dopfast`; the faster attacker of the Doppler-geolocation paper, sec. 3.2-4.4): matched filter of a whitened log-frequency spectrogram (40-1000 Hz, 0.256 s / 0.125 s) against a bank of exact straight-pass templates f0*g(t-h; v, d) with a 4-harmonic comb, max over pitch, robust median/MAD per shape (evidence E[v, d, s]). z = (peak E - null mean) / null sd, the null being the same peak on the file's time-reversed and frame-shuffled spectrograms; z > 3 = an event the attacker can geolocate from. **at orig event** = the cleaned file's E at the original's peak shape and time (+-1 s), on the same null. It integrates faint plateaus and harmonics that no single ridge shows.
 - **AF z**: significance of on-curve power over the per-bin floor, integrated over every frame of the TRUE curves (`evaluate.anti_forensics`). z > 3 means an attacker who integrates along the pass detects it. **≤-10 dB** = its 95% upper bound is ≥10 dB under the floor (the research target).
 - **exact contrast**: whitened dB on the true curve minus ±3–6 Hz beside it. A method that *moves* the curve (jitter) scores low here without hiding it, so also read:
 - **tolerant ridge excess**: per frame, the max whitened dB within ±8 Hz of the true curve, minus the same on control curves 24–30 Hz away (`evaluate.ridge_excess_db`). It still sees a wobbled or shifted ridge.
@@ -71,260 +72,260 @@ Reference (no processing): exact contrast and ridge excess of the ORIGINAL, medi
 
 ![prop_quiet](img/bl_prop_quiet.png)
 
-| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| dopplerscrub | -0.4 | no | 0.1 | -0.1 | – | – | 20.3 | 12.2 | 1.35 | 0.929 | 10.3% / 39.8% | Gone by eye in both views (freeze-1); AF z -0.4, the same as the oracle; integrated bound -9.8 dB (target -10, oracle -10.1). |
-| oracle | -0.3 | yes | 0.2 | -0.0 | – | – | 32.1 | 21.0 | 0.55 | 0.969 | 1.8% / 33.8% | Curves gone by eye. |
-| bandstop | 9.1 | no | 0.9 | 0.2 | – | – | 7.6 | 8.6 | 8.71 | 0.686 | 6.2% / 100.0% | FAIL: the 3rd harmonic (~400->300 Hz, 35-50 s) is plainly visible (band-edge weakness). |
-| bandstop_brick | -0.7 | yes | -0.0 | -0.1 | – | – | 6.8 | 7.5 | 9.76 | 0.638 | 6.1% / 100.0% | Curves gone; whole band replaced by the output floor. |
-| noise | 9.0 | no | 2.2 | 0.4 | – | – | 1.6 | -1.9 | 2.74 | 0.643 | 8.1% / 99.7% | Curves faintly visible. |
-| jitter | 69.9 | no | 3.5 | 1.8 | – | – | 2.1 | -2.9 | 5.96 | 0.889 | 99.0% / 96.7% | FAIL: curves plainly visible (wobbled). |
+| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | dopfast usable/events orig → clean | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| dopplerscrub | -0.4 | no | 0.1 | -0.1 | – | – | – | 20.3 | 12.2 | 1.35 | 0.929 | 10.3% / 39.8% | Gone by eye in both views (freeze-1); AF z -0.4, the same as the oracle; integrated bound -9.8 dB (target -10, oracle -10.1). |
+| oracle | -0.3 | yes | 0.2 | -0.0 | – | – | – | 32.1 | 21.0 | 0.55 | 0.969 | 1.8% / 33.8% | Curves gone by eye. |
+| bandstop | 9.1 | no | 0.9 | 0.2 | – | – | – | 7.6 | 8.6 | 8.71 | 0.686 | 6.2% / 100.0% | FAIL: the 3rd harmonic (~400->300 Hz, 35-50 s) is plainly visible (band-edge weakness). |
+| bandstop_brick | -0.7 | yes | -0.0 | -0.1 | – | – | – | 6.8 | 7.5 | 9.76 | 0.638 | 6.1% / 100.0% | Curves gone; whole band replaced by the output floor. |
+| noise | 9.0 | no | 2.2 | 0.4 | – | – | – | 1.6 | -1.9 | 2.74 | 0.643 | 8.1% / 99.7% | Curves faintly visible. |
+| jitter | 69.9 | no | 3.5 | 1.8 | – | – | – | 2.1 | -2.9 | 5.96 | 0.889 | 99.0% / 96.7% | FAIL: curves plainly visible (wobbled). |
 
 ### prop_faint (synth, dev, curve NOT visible before)
 
 ![prop_faint](img/bl_prop_faint.png)
 
-| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| dopplerscrub | 1.1 | no | 0.5 | 0.1 | – | – | 73.4 | 69.4 | 0.01 | 1.000 | 0.0% / 0.0% | N/A (not visible before). |
-| oracle | -2.4 | yes | -0.4 | -0.0 | – | – | 30.0 | 20.7 | 0.59 | 0.968 | 2.2% / 42.9% | N/A |
-| bandstop | 1.7 | no | 0.1 | 0.0 | – | – | 8.0 | 8.7 | 8.73 | 0.691 | 6.2% / 100.0% | N/A |
-| bandstop_brick | 0.9 | no | 0.0 | 0.1 | – | – | 7.1 | 7.5 | 9.80 | 0.641 | 6.2% / 100.0% | N/A |
-| noise | 0.4 | no | 0.3 | 0.1 | – | – | 1.6 | -2.2 | 2.79 | 0.638 | 8.1% / 99.7% | N/A |
-| jitter | 0.4 | no | 0.1 | 0.2 | – | – | 2.6 | -2.9 | 5.71 | 0.920 | 98.9% / 95.7% | N/A |
+| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | dopfast usable/events orig → clean | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| dopplerscrub | 1.1 | no | 0.5 | 0.1 | – | – | – | 73.4 | 69.4 | 0.01 | 1.000 | 0.0% / 0.0% | N/A (not visible before). |
+| oracle | -2.4 | yes | -0.4 | -0.0 | – | – | – | 30.0 | 20.7 | 0.59 | 0.968 | 2.2% / 42.9% | N/A |
+| bandstop | 1.7 | no | 0.1 | 0.0 | – | – | – | 8.0 | 8.7 | 8.73 | 0.691 | 6.2% / 100.0% | N/A |
+| bandstop_brick | 0.9 | no | 0.0 | 0.1 | – | – | – | 7.1 | 7.5 | 9.80 | 0.641 | 6.2% / 100.0% | N/A |
+| noise | 0.4 | no | 0.3 | 0.1 | – | – | – | 1.6 | -2.2 | 2.79 | 0.638 | 8.1% / 99.7% | N/A |
+| jitter | 0.4 | no | 0.1 | 0.2 | – | – | – | 2.6 | -2.9 | 5.71 | 0.920 | 98.9% / 95.7% | N/A |
 
 ### overlap (synth, dev, curve visible before)
 
 ![overlap](img/bl_overlap.png)
 
-| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| dopplerscrub | -4.5 | yes | -0.1 | -0.1 | – | – | 22.9 | 14.6 | 1.05 | 0.937 | 6.5% / 45.7% | Gone by eye in both views (freeze-1); AF z -4.5, upper bound -15.1 dB: meets the target, the same as the oracle. |
-| oracle | -5.9 | yes | -0.2 | -0.1 | – | – | 30.0 | 19.5 | 0.69 | 0.948 | 2.4% / 47.0% | Gone. |
-| bandstop | 2.0 | no | 0.4 | 0.1 | – | – | 8.0 | 8.7 | 8.82 | 0.687 | 6.2% / 100.0% | Gone by eye (all curves mid-band); AF z 2.0. |
-| bandstop_brick | -0.7 | yes | 0.1 | 0.1 | – | – | 7.1 | 7.5 | 9.92 | 0.640 | 6.1% / 100.0% | Gone. |
-| noise | 5.4 | no | 0.9 | 0.3 | – | – | 1.7 | -2.2 | 2.79 | 0.639 | 8.0% / 99.7% | Faint lines visible in the stock view. |
-| jitter | 33.8 | no | 2.8 | 0.8 | – | – | 2.7 | -2.9 | 5.72 | 0.920 | 98.9% / 95.7% | FAIL: curves plainly visible. |
+| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | dopfast usable/events orig → clean | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| dopplerscrub | -4.5 | yes | -0.1 | -0.1 | – | – | – | 22.9 | 14.6 | 1.05 | 0.937 | 6.5% / 45.7% | Gone by eye in both views (freeze-1); AF z -4.5, upper bound -15.1 dB: meets the target, the same as the oracle. |
+| oracle | -5.9 | yes | -0.2 | -0.1 | – | – | – | 30.0 | 19.5 | 0.69 | 0.948 | 2.4% / 47.0% | Gone. |
+| bandstop | 2.0 | no | 0.4 | 0.1 | – | – | – | 8.0 | 8.7 | 8.82 | 0.687 | 6.2% / 100.0% | Gone by eye (all curves mid-band); AF z 2.0. |
+| bandstop_brick | -0.7 | yes | 0.1 | 0.1 | – | – | – | 7.1 | 7.5 | 9.92 | 0.640 | 6.1% / 100.0% | Gone. |
+| noise | 5.4 | no | 0.9 | 0.3 | – | – | – | 1.7 | -2.2 | 2.79 | 0.639 | 8.0% / 99.7% | Faint lines visible in the stock view. |
+| jitter | 33.8 | no | 2.8 | 0.8 | – | – | – | 2.7 | -2.9 | 5.72 | 0.920 | 98.9% / 95.7% | FAIL: curves plainly visible. |
 
 ### speech (synth, dev, curve visible before)
 
 ![speech](img/bl_speech.png)
 
-| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| dopplerscrub | 2.1 | no | 0.8 | 0.0 | – | – | 36.1 | 31.3 | 0.30 | 0.986 | 0.7% / 14.4% | Gone by eye (freeze-1); speech untouched. AF z 2.1 (just under 3), bound -6.3 dB: below detection, target not met (oracle -9.7). |
-| oracle | -1.7 | no | -0.2 | -0.1 | – | – | 32.3 | 21.3 | 0.54 | 0.971 | 1.7% / 31.4% | Gone; speech untouched by eye. |
-| bandstop | 1.6 | no | 0.5 | 0.1 | – | – | 7.8 | 8.9 | 8.95 | 0.702 | 6.1% / 100.0% | Gone by eye; AF z 1.6; but speech below 450 Hz is gone too. |
-| bandstop_brick | 0.4 | no | -0.1 | -0.0 | – | – | 7.0 | 7.5 | 10.15 | 0.650 | 6.1% / 100.0% | Gone; low speech band erased. |
-| noise | 2.6 | no | 0.8 | 0.1 | – | – | 2.5 | 1.8 | 2.62 | 0.674 | 7.8% / 99.6% | Mostly hidden (AF z 2.6); speech-band SNR 1.8 dB. |
-| jitter | 8.0 | no | 2.0 | 0.6 | – | – | 0.3 | -2.9 | 6.00 | 0.911 | 99.0% / 96.7% | FAIL: curve visible (AF z 8.0). |
+| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | dopfast usable/events orig → clean | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| dopplerscrub | 2.1 | no | 0.8 | 0.0 | – | – | – | 36.1 | 31.3 | 0.30 | 0.986 | 0.7% / 14.4% | Gone by eye (freeze-1); speech untouched. AF z 2.1 (just under 3), bound -6.3 dB: below detection, target not met (oracle -9.7). |
+| oracle | -1.7 | no | -0.2 | -0.1 | – | – | – | 32.3 | 21.3 | 0.54 | 0.971 | 1.7% / 31.4% | Gone; speech untouched by eye. |
+| bandstop | 1.6 | no | 0.5 | 0.1 | – | – | – | 7.8 | 8.9 | 8.95 | 0.702 | 6.1% / 100.0% | Gone by eye; AF z 1.6; but speech below 450 Hz is gone too. |
+| bandstop_brick | 0.4 | no | -0.1 | -0.0 | – | – | – | 7.0 | 7.5 | 10.15 | 0.650 | 6.1% / 100.0% | Gone; low speech band erased. |
+| noise | 2.6 | no | 0.8 | 0.1 | – | – | – | 2.5 | 1.8 | 2.62 | 0.674 | 7.8% / 99.6% | Mostly hidden (AF z 2.6); speech-band SNR 1.8 dB. |
+| jitter | 8.0 | no | 2.0 | 0.6 | – | – | – | 0.3 | -2.9 | 6.00 | 0.911 | 99.0% / 96.7% | FAIL: curve visible (AF z 8.0). |
 
 ### f1 (synth, dev, OUT OF SCOPE (not fixed-wing), curve NOT visible before)
 
 ![f1](img/bl_f1.png)
 
-| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| dopplerscrub | 1.5 | no | 0.4 | 0.2 | – | – | 71.0 | 66.5 | 0.01 | 1.000 | 0.0% / 0.0% | N/A (not visible before). |
-| oracle | -1.5 | yes | -0.1 | 0.0 | – | – | 34.3 | 21.5 | 0.34 | 0.985 | 1.2% / 12.3% | N/A |
-| bandstop | 1.0 | no | 0.1 | 0.1 | – | – | 7.6 | 9.0 | 8.70 | 0.688 | 6.2% / 100.0% | N/A |
-| bandstop_brick | -0.3 | no | -0.0 | -0.3 | – | – | 6.6 | 7.7 | 9.80 | 0.641 | 6.1% / 100.0% | N/A |
-| noise | -0.9 | no | -0.4 | -0.2 | – | – | 1.4 | -2.7 | 2.91 | 0.631 | 8.1% / 99.7% | N/A |
-| jitter | 0.4 | yes | 0.2 | 0.3 | – | – | 2.5 | -2.9 | 5.96 | 0.888 | 99.0% / 96.6% | N/A |
+| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | dopfast usable/events orig → clean | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| dopplerscrub | 1.5 | no | 0.4 | 0.2 | – | – | – | 71.0 | 66.5 | 0.01 | 1.000 | 0.0% / 0.0% | N/A (not visible before). |
+| oracle | -1.5 | yes | -0.1 | 0.0 | – | – | – | 34.3 | 21.5 | 0.34 | 0.985 | 1.2% / 12.3% | N/A |
+| bandstop | 1.0 | no | 0.1 | 0.1 | – | – | – | 7.6 | 9.0 | 8.70 | 0.688 | 6.2% / 100.0% | N/A |
+| bandstop_brick | -0.3 | no | -0.0 | -0.3 | – | – | – | 6.6 | 7.7 | 9.80 | 0.641 | 6.1% / 100.0% | N/A |
+| noise | -0.9 | no | -0.4 | -0.2 | – | – | – | 1.4 | -2.7 | 2.91 | 0.631 | 8.1% / 99.7% | N/A |
+| jitter | 0.4 | yes | 0.2 | 0.3 | – | – | – | 2.5 | -2.9 | 5.96 | 0.888 | 99.0% / 96.6% | N/A |
 
 ### helicopter (synth, dev, OUT OF SCOPE (not fixed-wing), curve NOT visible before)
 
 ![helicopter](img/bl_helicopter.png)
 
-| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| dopplerscrub | 2.7 | no | 0.9 | 0.0 | – | – | 73.1 | 69.5 | 0.01 | 1.000 | 0.0% / 0.0% | N/A (not visible before). |
-| oracle | -3.4 | yes | -0.2 | -0.0 | – | – | 20.6 | 23.9 | 0.83 | 0.960 | 3.1% / 51.0% | N/A |
-| bandstop | 1.1 | no | -0.0 | -0.0 | – | – | 8.3 | 8.7 | 8.87 | 0.688 | 6.2% / 100.0% | N/A |
-| bandstop_brick | 2.8 | no | -0.2 | -0.1 | – | – | 7.5 | 7.5 | 9.98 | 0.640 | 6.1% / 100.0% | N/A |
-| noise | -0.2 | yes | 0.1 | 0.0 | – | – | 1.6 | -2.1 | 2.78 | 0.638 | 8.0% / 99.7% | N/A |
-| jitter | 2.9 | no | 0.8 | 0.0 | – | – | 2.4 | -2.9 | 5.72 | 0.920 | 98.9% / 95.8% | N/A |
+| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | dopfast usable/events orig → clean | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| dopplerscrub | 2.7 | no | 0.9 | 0.0 | – | – | – | 73.1 | 69.5 | 0.01 | 1.000 | 0.0% / 0.0% | N/A (not visible before). |
+| oracle | -3.4 | yes | -0.2 | -0.0 | – | – | – | 20.6 | 23.9 | 0.83 | 0.960 | 3.1% / 51.0% | N/A |
+| bandstop | 1.1 | no | -0.0 | -0.0 | – | – | – | 8.3 | 8.7 | 8.87 | 0.688 | 6.2% / 100.0% | N/A |
+| bandstop_brick | 2.8 | no | -0.2 | -0.1 | – | – | – | 7.5 | 7.5 | 9.98 | 0.640 | 6.1% / 100.0% | N/A |
+| noise | -0.2 | yes | 0.1 | 0.0 | – | – | – | 1.6 | -2.1 | 2.78 | 0.638 | 8.0% / 99.7% | N/A |
+| jitter | 2.9 | no | 0.8 | 0.0 | – | – | – | 2.4 | -2.9 | 5.72 | 0.920 | 98.9% / 95.8% | N/A |
 
 ### jet (synth, dev, curve NOT visible before)
 
 ![jet](img/bl_jet.png)
 
-| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| dopplerscrub | 2.5 | no | 0.3 | 0.0 | – | – | 73.5 | 70.2 | 0.01 | 1.000 | 0.0% / 0.0% | N/A (not visible before). |
-| oracle | -5.9 | yes | -0.3 | -0.1 | – | – | 34.8 | 23.9 | 0.38 | 0.984 | 1.1% / 17.8% | N/A |
-| bandstop | 1.6 | no | 0.6 | 0.1 | – | – | 7.7 | 9.1 | 8.69 | 0.687 | 6.2% / 100.0% | N/A |
-| bandstop_brick | 0.5 | no | 0.1 | 0.1 | – | – | 6.9 | 7.9 | 9.74 | 0.639 | 6.2% / 100.0% | N/A |
-| noise | -1.0 | no | -0.5 | 0.1 | – | – | 1.6 | -1.4 | 2.74 | 0.643 | 8.1% / 99.7% | N/A |
-| jitter | 1.0 | no | 0.2 | 0.0 | – | – | 1.9 | -2.9 | 5.97 | 0.889 | 99.0% / 96.7% | N/A |
+| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | dopfast usable/events orig → clean | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| dopplerscrub | 2.5 | no | 0.3 | 0.0 | – | – | – | 73.5 | 70.2 | 0.01 | 1.000 | 0.0% / 0.0% | N/A (not visible before). |
+| oracle | -5.9 | yes | -0.3 | -0.1 | – | – | – | 34.8 | 23.9 | 0.38 | 0.984 | 1.1% / 17.8% | N/A |
+| bandstop | 1.6 | no | 0.6 | 0.1 | – | – | – | 7.7 | 9.1 | 8.69 | 0.687 | 6.2% / 100.0% | N/A |
+| bandstop_brick | 0.5 | no | 0.1 | 0.1 | – | – | – | 6.9 | 7.9 | 9.74 | 0.639 | 6.2% / 100.0% | N/A |
+| noise | -1.0 | no | -0.5 | 0.1 | – | – | – | 1.6 | -1.4 | 2.74 | 0.643 | 8.1% / 99.7% | N/A |
+| jitter | 1.0 | no | 0.2 | 0.0 | – | – | – | 1.9 | -2.9 | 5.97 | 0.889 | 99.0% / 96.7% | N/A |
 
 ### music (synth, dev, curve NOT visible before)
 
 ![music](img/bl_music.png)
 
-| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| dopplerscrub | -0.8 | no | 1.1 | 0.3 | – | – | 74.0 | 70.2 | 0.01 | 1.000 | 0.0% / 0.0% | N/A (not visible before); untouched. |
-| oracle | -1.1 | no | -0.1 | 0.1 | – | – | 30.1 | 18.6 | 0.52 | 0.978 | 2.1% / 35.3% | N/A |
-| bandstop | -0.6 | no | 0.4 | 0.0 | – | – | 5.8 | 5.8 | 9.55 | 0.685 | 6.2% / 100.0% | N/A |
-| bandstop_brick | 0.8 | no | 0.2 | 0.1 | – | – | 5.3 | 5.2 | 10.56 | 0.641 | 6.1% / 100.0% | N/A |
-| noise | -0.3 | no | 0.4 | 0.1 | – | – | 1.4 | -2.3 | 2.56 | 0.672 | 8.1% / 99.6% | N/A |
-| jitter | -0.8 | no | 0.9 | -0.1 | – | – | 1.6 | -2.9 | 5.72 | 0.912 | 98.9% / 95.7% | N/A |
+| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | dopfast usable/events orig → clean | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| dopplerscrub | -0.8 | no | 1.1 | 0.3 | – | – | – | 74.0 | 70.2 | 0.01 | 1.000 | 0.0% / 0.0% | N/A (not visible before); untouched. |
+| oracle | -1.1 | no | -0.1 | 0.1 | – | – | – | 30.1 | 18.6 | 0.52 | 0.978 | 2.1% / 35.3% | N/A |
+| bandstop | -0.6 | no | 0.4 | 0.0 | – | – | – | 5.8 | 5.8 | 9.55 | 0.685 | 6.2% / 100.0% | N/A |
+| bandstop_brick | 0.8 | no | 0.2 | 0.1 | – | – | – | 5.3 | 5.2 | 10.56 | 0.641 | 6.1% / 100.0% | N/A |
+| noise | -0.3 | no | 0.4 | 0.1 | – | – | – | 1.4 | -2.3 | 2.56 | 0.672 | 8.1% / 99.6% | N/A |
+| jitter | -0.8 | no | 0.9 | -0.1 | – | – | – | 1.6 | -2.9 | 5.72 | 0.912 | 98.9% / 95.7% | N/A |
 
 ### stereo (synth, dev, curve visible before)
 
 ![stereo](img/bl_stereo.png)
 
-| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| dopplerscrub | -0.1 | no | 0.4 | 0.1 | – | – | 35.9 | 29.1 | 0.26 | 0.987 | 0.7% / 13.5% | Gone (freeze-1; previously not detected at all). AF z -0.1, bound -9.6 dB, the same as the oracle (-9.5). |
-| oracle | -1.9 | no | -0.3 | -0.1 | – | – | 33.5 | 19.9 | 0.50 | 0.973 | 1.7% / 28.7% | Gone. |
-| bandstop | 0.3 | no | 0.7 | -0.0 | – | – | 7.9 | 8.7 | 8.78 | 0.687 | 6.2% / 100.0% | Gone (z 0.3). |
-| bandstop_brick | 0.0 | no | 0.2 | 0.0 | – | – | 7.0 | 7.5 | 9.86 | 0.639 | 6.1% / 100.0% | Gone. |
-| noise | 3.0 | no | 0.6 | 0.0 | – | – | 4.6 | 0.8 | 2.31 | 0.683 | 7.8% / 99.4% | Borderline (z 3.0). |
-| jitter | 6.3 | no | 1.6 | 0.4 | – | – | 2.3 | -2.9 | 5.97 | 0.888 | 99.0% / 96.8% | FAIL: visible (z 6.3). |
+| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | dopfast usable/events orig → clean | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| dopplerscrub | -0.1 | no | 0.4 | 0.1 | – | – | – | 35.9 | 29.1 | 0.26 | 0.987 | 0.7% / 13.5% | Gone (freeze-1; previously not detected at all). AF z -0.1, bound -9.6 dB, the same as the oracle (-9.5). |
+| oracle | -1.9 | no | -0.3 | -0.1 | – | – | – | 33.5 | 19.9 | 0.50 | 0.973 | 1.7% / 28.7% | Gone. |
+| bandstop | 0.3 | no | 0.7 | -0.0 | – | – | – | 7.9 | 8.7 | 8.78 | 0.687 | 6.2% / 100.0% | Gone (z 0.3). |
+| bandstop_brick | 0.0 | no | 0.2 | 0.0 | – | – | – | 7.0 | 7.5 | 9.86 | 0.639 | 6.1% / 100.0% | Gone. |
+| noise | 3.0 | no | 0.6 | 0.0 | – | – | – | 4.6 | 0.8 | 2.31 | 0.683 | 7.8% / 99.4% | Borderline (z 3.0). |
+| jitter | 6.3 | no | 1.6 | 0.4 | – | – | – | 2.3 | -2.9 | 5.97 | 0.888 | 99.0% / 96.8% | FAIL: visible (z 6.3). |
 
 ### long_hum60 (synth, dev, curve NOT visible before)
 
 ![long_hum60](img/bl_long_hum60.png)
 
-| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| dopplerscrub | 0.4 | no | 0.5 | 0.1 | – | – | 73.5 | 69.3 | 0.01 | 1.000 | 0.0% / 0.0% | N/A (not visible before). |
-| oracle | -2.3 | no | -0.5 | -0.0 | – | – | 28.9 | 19.4 | 0.64 | 0.964 | 2.7% / 51.1% | N/A |
-| bandstop | 0.5 | no | 0.3 | 0.1 | – | – | 8.1 | 8.7 | 8.66 | 0.688 | 6.2% / 100.0% | N/A |
-| bandstop_brick | -0.3 | no | -0.2 | 0.1 | – | – | 7.2 | 7.5 | 9.71 | 0.640 | 6.2% / 100.0% | N/A |
-| noise | -0.7 | yes | -0.1 | 0.2 | – | – | 1.7 | -2.3 | 2.82 | 0.642 | 8.1% / 99.7% | N/A |
-| jitter | 0.2 | no | 0.3 | 0.1 | – | – | 2.7 | -2.9 | 5.76 | 0.914 | 98.9% / 96.3% | N/A |
+| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | dopfast usable/events orig → clean | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| dopplerscrub | 0.4 | no | 0.5 | 0.1 | – | – | – | 73.5 | 69.3 | 0.01 | 1.000 | 0.0% / 0.0% | N/A (not visible before). |
+| oracle | -2.3 | no | -0.5 | -0.0 | – | – | – | 28.9 | 19.4 | 0.64 | 0.964 | 2.7% / 51.1% | N/A |
+| bandstop | 0.5 | no | 0.3 | 0.1 | – | – | – | 8.1 | 8.7 | 8.66 | 0.688 | 6.2% / 100.0% | N/A |
+| bandstop_brick | -0.3 | no | -0.2 | 0.1 | – | – | – | 7.2 | 7.5 | 9.71 | 0.640 | 6.2% / 100.0% | N/A |
+| noise | -0.7 | yes | -0.1 | 0.2 | – | – | – | 1.7 | -2.3 | 2.82 | 0.642 | 8.1% / 99.7% | N/A |
+| jitter | 0.2 | no | 0.3 | 0.1 | – | – | – | 2.7 | -2.9 | 5.76 | 0.914 | 98.9% / 96.3% | N/A |
 
 ### prop_pass (real, dev, curve visible before)
 
 ![prop_pass](img/bl_prop_pass.png)
 
-| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| dopplerscrub | – | – | – | – | 12.9 | 3/13 (11) | 1.0 | 0.6 | 2.07 | 0.565 | 35.0% / 95.3% | Much improved (freeze-1): the harmonic fan is mostly gone, with only faint diagonal texture at 300-450 Hz, 18-30 s. But the removed REGION is visible: dark blue patches 100-250 Hz across 15-35 s in the smoothed view. Box ridge cells 24.8% -> 12.9% (brick wall 3.9%); 3 of 13 box-free ridges still z>3. Heavy damage: whole-signal SNR 1 dB, STOI-like 0.57 (the target is most of this clip's energy). |
-| bandstop | – | – | – | – | 18.5 | 4/13 (1) | 0.6 | 1.6 | 6.36 | 0.685 | 12.7% / 100.0% | FAIL: the 300-450 Hz harmonic fan is fully visible (band-edge weakness); the low part is gone. |
-| bandstop_brick | – | – | – | – | 3.9 | 0/13 (2) | 0.5 | 0.9 | 6.91 | 0.628 | 12.6% / 100.0% | Hidden: only a faint broadband blob near 25 s remains; everything in-band is erased. |
-| noise | – | – | – | – | 8.4 | 10/13 (5) | -0.3 | -0.4 | 2.19 | 0.728 | 17.1% / 97.9% | FAIL: the whole sweep plainly visible over the noise. |
-| jitter | – | – | – | – | 24.9 | 13/13 (4) | -1.4 | -3.4 | 3.43 | 0.906 | 98.4% / 96.4% | FAIL: unchanged by eye. |
+| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | dopfast usable/events orig → clean | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| dopplerscrub | – | – | – | – | 12.9 | 3/13 (11) | – | 1.0 | 0.6 | 2.07 | 0.565 | 35.0% / 95.3% | Much improved (freeze-1): the harmonic fan is mostly gone, with only faint diagonal texture at 300-450 Hz, 18-30 s. But the removed REGION is visible: dark blue patches 100-250 Hz across 15-35 s in the smoothed view. Box ridge cells 24.8% -> 12.9% (brick wall 3.9%); 3 of 13 box-free ridges still z>3. Heavy damage: whole-signal SNR 1 dB, STOI-like 0.57 (the target is most of this clip's energy). |
+| bandstop | – | – | – | – | 18.5 | 4/13 (1) | – | 0.6 | 1.6 | 6.36 | 0.685 | 12.7% / 100.0% | FAIL: the 300-450 Hz harmonic fan is fully visible (band-edge weakness); the low part is gone. |
+| bandstop_brick | – | – | – | – | 3.9 | 0/13 (2) | – | 0.5 | 0.9 | 6.91 | 0.628 | 12.6% / 100.0% | Hidden: only a faint broadband blob near 25 s remains; everything in-band is erased. |
+| noise | – | – | – | – | 8.4 | 10/13 (5) | – | -0.3 | -0.4 | 2.19 | 0.728 | 17.1% / 97.9% | FAIL: the whole sweep plainly visible over the noise. |
+| jitter | – | – | – | – | 24.9 | 13/13 (4) | – | -1.4 | -3.4 | 3.43 | 0.906 | 98.4% / 96.4% | FAIL: unchanged by eye. |
 
 ### colsto_2050_2250 (real, dev, curve visible before)
 
 ![colsto_2050_2250](img/bl_colsto_2050_2250.png)
 
-| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| dopplerscrub | – | – | – | – | 8.3 | 27/36 (6) | 11.3 | 8.5 | 1.24 | 0.872 | 26.7% / 65.1% | Event-box sweeps gone by eye; the broadband burst at ~105 s and the stepped tones are kept. Left: a wavy low line at 60-90 Hz, 85-110 s, and a few faint short streaks (e.g. ~250 Hz, 40-60 s). Box ridge cells 10.6% -> 8.3% (noise ~0.5%; brick wall 1.3%); box-free: 27 of 36 z>3 ridges survive, so many non-event ridges outside the box remain. |
-| bandstop | – | – | – | – | 1.4 | 10/36 (3) | 2.4 | 6.7 | 4.81 | 0.685 | 12.8% / 99.9% | Event box clean, but the 450->330 Hz sweep at 75-105 s is still visible near the band edge. |
-| bandstop_brick | – | – | – | – | 1.3 | 0/36 (1) | 1.0 | 5.9 | 5.47 | 0.634 | 13.0% / 100.0% | Everything hidden, including all non-Doppler content in the band. |
-| noise | – | – | – | – | 5.5 | 29/36 (1) | 3.0 | -4.0 | 1.73 | 0.672 | 16.2% / 98.5% | FAIL: event curves plainly visible. |
-| jitter | – | – | – | – | 11.0 | 31/36 (9) | 1.4 | -3.0 | 2.55 | 0.937 | 98.3% / 96.1% | FAIL: unchanged by eye. |
+| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | dopfast usable/events orig → clean | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| dopplerscrub | – | – | – | – | 8.3 | 27/36 (6) | – | 11.3 | 8.5 | 1.24 | 0.872 | 26.7% / 65.1% | Event-box sweeps gone by eye; the broadband burst at ~105 s and the stepped tones are kept. Left: a wavy low line at 60-90 Hz, 85-110 s, and a few faint short streaks (e.g. ~250 Hz, 40-60 s). Box ridge cells 10.6% -> 8.3% (noise ~0.5%; brick wall 1.3%); box-free: 27 of 36 z>3 ridges survive, so many non-event ridges outside the box remain. |
+| bandstop | – | – | – | – | 1.4 | 10/36 (3) | – | 2.4 | 6.7 | 4.81 | 0.685 | 12.8% / 99.9% | Event box clean, but the 450->330 Hz sweep at 75-105 s is still visible near the band edge. |
+| bandstop_brick | – | – | – | – | 1.3 | 0/36 (1) | – | 1.0 | 5.9 | 5.47 | 0.634 | 13.0% / 100.0% | Everything hidden, including all non-Doppler content in the band. |
+| noise | – | – | – | – | 5.5 | 29/36 (1) | – | 3.0 | -4.0 | 1.73 | 0.672 | 16.2% / 98.5% | FAIL: event curves plainly visible. |
+| jitter | – | – | – | – | 11.0 | 31/36 (9) | – | 1.4 | -3.0 | 2.55 | 0.937 | 98.3% / 96.1% | FAIL: unchanged by eye. |
 
 ### ho_ambient_plane (heldout, heldout, curve visible before)
 
 ![ho_ambient_plane](img/bl_ho_ambient_plane.png)
 
-| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| dopplerscrub | – | – | – | – | – | 5/11 (6) | 1.0 | 0.9 | 1.63 | 0.702 | 77.8% / 90.1% | Mostly hidden in 40-450 Hz: the 4 descending harmonics are gone; only a faint ~110 Hz line at 5-15 s remains. Broadband content kept. |
-| bandstop | – | – | – | – | – | 5/11 (0) | 0.3 | 1.7 | 5.90 | 0.711 | 31.5% / 100.0% | FAIL: the 330 and 420 Hz harmonics fully visible (band edge). |
-| bandstop_brick | – | – | – | – | – | 1/11 (0) | 0.2 | 1.1 | 6.42 | 0.660 | 31.2% / 100.0% | Hidden; band replaced by the output floor. |
-| noise | – | – | – | – | – | 6/11 (1) | 2.8 | -0.4 | 2.28 | 0.702 | 40.8% / 98.1% | FAIL: all 4 harmonics plainly visible over the noise. |
-| jitter | – | – | – | – | – | 9/11 (5) | -2.0 | -2.8 | 2.87 | 0.913 | 97.5% / 96.8% | FAIL: unchanged. |
+| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | dopfast usable/events orig → clean | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| dopplerscrub | – | – | – | – | – | 5/11 (6) | – | 1.0 | 0.9 | 1.63 | 0.702 | 77.8% / 90.1% | Mostly hidden in 40-450 Hz: the 4 descending harmonics are gone; only a faint ~110 Hz line at 5-15 s remains. Broadband content kept. |
+| bandstop | – | – | – | – | – | 5/11 (0) | – | 0.3 | 1.7 | 5.90 | 0.711 | 31.5% / 100.0% | FAIL: the 330 and 420 Hz harmonics fully visible (band edge). |
+| bandstop_brick | – | – | – | – | – | 1/11 (0) | – | 0.2 | 1.1 | 6.42 | 0.660 | 31.2% / 100.0% | Hidden; band replaced by the output floor. |
+| noise | – | – | – | – | – | 6/11 (1) | – | 2.8 | -0.4 | 2.28 | 0.702 | 40.8% / 98.1% | FAIL: all 4 harmonics plainly visible over the noise. |
+| jitter | – | – | – | – | – | 9/11 (5) | – | -2.0 | -2.8 | 2.87 | 0.913 | 97.5% / 96.8% | FAIL: unchanged. |
 
 ### ho_atr72 (heldout, heldout, curve visible before)
 
 ![ho_atr72](img/bl_ho_atr72.png)
 
-| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| dopplerscrub | – | – | – | – | – | 2/2 (0) | 26.7 | 23.6 | 0.08 | 0.997 | 0.4% / 7.2% | FAIL: unchanged (V-shaped fringe and every line kept). |
-| bandstop | – | – | – | – | – | 1/2 (1) | 7.6 | 9.9 | 5.20 | 0.702 | 7.4% / 100.0% | FAIL: 300-450 Hz kept; the pass shows as a bright slab at 12-16 s. |
-| bandstop_brick | – | – | – | – | – | 1/2 (1) | 7.2 | 8.7 | 5.71 | 0.646 | 7.3% / 100.0% | No curve left, but the pass's loudness leaves a bright broadband slab at 12-16 s (reveals the event time, not the Doppler curve). |
-| noise | – | – | – | – | – | 2/2 (6) | 10.1 | 11.1 | 1.99 | 0.729 | 8.8% / 98.1% | Fringe faint but visible. |
-| jitter | – | – | – | – | – | 1/2 (2) | -2.7 | -2.8 | 3.29 | 0.859 | 99.0% / 96.5% | FAIL: unchanged. |
+| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | dopfast usable/events orig → clean | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| dopplerscrub | – | – | – | – | – | 2/2 (0) | – | 26.7 | 23.6 | 0.08 | 0.997 | 0.4% / 7.2% | FAIL: unchanged (V-shaped fringe and every line kept). |
+| bandstop | – | – | – | – | – | 1/2 (1) | – | 7.6 | 9.9 | 5.20 | 0.702 | 7.4% / 100.0% | FAIL: 300-450 Hz kept; the pass shows as a bright slab at 12-16 s. |
+| bandstop_brick | – | – | – | – | – | 1/2 (1) | – | 7.2 | 8.7 | 5.71 | 0.646 | 7.3% / 100.0% | No curve left, but the pass's loudness leaves a bright broadband slab at 12-16 s (reveals the event time, not the Doppler curve). |
+| noise | – | – | – | – | – | 2/2 (6) | – | 10.1 | 11.1 | 1.99 | 0.729 | 8.8% / 98.1% | Fringe faint but visible. |
+| jitter | – | – | – | – | – | 1/2 (2) | – | -2.7 | -2.8 | 3.29 | 0.859 | 99.0% / 96.5% | FAIL: unchanged. |
 
 ### ho_city_helicopter (heldout, heldout, OUT OF SCOPE (not fixed-wing), curve NOT visible before)
 
 ![ho_city_helicopter](img/bl_ho_city_helicopter.png)
 
-| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| dopplerscrub | – | – | – | – | – | 4/6 (5) | 7.4 | 11.0 | 0.86 | 0.890 | 6.5% / 76.5% | Little change; diagonal smears at 20-40 s still visible. |
-| bandstop | – | – | – | – | – | 3/6 (0) | 3.3 | 7.0 | 6.45 | 0.705 | 5.0% / 100.0% | Mostly hidden, but filter ringing leaves 2 bright vertical bars (20 s, 39 s). |
-| bandstop_brick | – | – | – | – | – | 2/6 (6) | 3.0 | 5.9 | 7.23 | 0.643 | 5.0% / 100.0% | Hidden except 2 bright vertical bars (transients). |
-| noise | – | – | – | – | – | 4/6 (2) | 6.0 | 8.4 | 1.35 | 0.877 | 5.9% / 97.9% | Mostly hidden. |
-| jitter | – | – | – | – | – | 6/6 (4) | -2.8 | -2.9 | 3.84 | 0.898 | 99.0% / 96.2% | FAIL: unchanged. |
+| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | dopfast usable/events orig → clean | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| dopplerscrub | – | – | – | – | – | 4/6 (5) | – | 7.4 | 11.0 | 0.86 | 0.890 | 6.5% / 76.5% | Little change; diagonal smears at 20-40 s still visible. |
+| bandstop | – | – | – | – | – | 3/6 (0) | – | 3.3 | 7.0 | 6.45 | 0.705 | 5.0% / 100.0% | Mostly hidden, but filter ringing leaves 2 bright vertical bars (20 s, 39 s). |
+| bandstop_brick | – | – | – | – | – | 2/6 (6) | – | 3.0 | 5.9 | 7.23 | 0.643 | 5.0% / 100.0% | Hidden except 2 bright vertical bars (transients). |
+| noise | – | – | – | – | – | 4/6 (2) | – | 6.0 | 8.4 | 1.35 | 0.877 | 5.9% / 97.9% | Mostly hidden. |
+| jitter | – | – | – | – | – | 6/6 (4) | – | -2.8 | -2.9 | 3.84 | 0.898 | 99.0% / 96.2% | FAIL: unchanged. |
 
 ### ho_crop_duster (heldout, heldout, curve visible before)
 
 ![ho_crop_duster](img/bl_ho_crop_duster.png)
 
-| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| dopplerscrub | – | – | – | – | – | 10/17 (21) | 0.7 | 1.3 | 1.82 | 0.644 | 33.5% / 97.2% | Fans largely gone; steady lines (e.g. ~170 Hz, 15-25 s) and short streaks at 35-45 s remain. |
-| bandstop | – | – | – | – | – | 6/17 (4) | 0.3 | 2.3 | 6.25 | 0.690 | 13.6% / 100.0% | FAIL: 300-450 Hz fans visible; bright bars at 45 s and 61 s. |
-| bandstop_brick | – | – | – | – | – | 0/17 (9) | 0.2 | 1.4 | 6.93 | 0.629 | 13.5% / 100.0% | Curves gone; faint broadband texture 30-55 s and a bright bar at 61 s. |
-| noise | – | – | – | – | – | 14/17 (19) | 3.2 | -0.1 | 1.85 | 0.734 | 32.0% / 97.9% | FAIL: fans visible. |
-| jitter | – | – | – | – | – | 16/17 (1) | -2.1 | -2.9 | 3.31 | 0.911 | 98.3% / 96.6% | FAIL: unchanged. |
+| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | dopfast usable/events orig → clean | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| dopplerscrub | – | – | – | – | – | 10/17 (21) | – | 0.7 | 1.3 | 1.82 | 0.644 | 33.5% / 97.2% | Fans largely gone; steady lines (e.g. ~170 Hz, 15-25 s) and short streaks at 35-45 s remain. |
+| bandstop | – | – | – | – | – | 6/17 (4) | – | 0.3 | 2.3 | 6.25 | 0.690 | 13.6% / 100.0% | FAIL: 300-450 Hz fans visible; bright bars at 45 s and 61 s. |
+| bandstop_brick | – | – | – | – | – | 0/17 (9) | – | 0.2 | 1.4 | 6.93 | 0.629 | 13.5% / 100.0% | Curves gone; faint broadband texture 30-55 s and a bright bar at 61 s. |
+| noise | – | – | – | – | – | 14/17 (19) | – | 3.2 | -0.1 | 1.85 | 0.734 | 32.0% / 97.9% | FAIL: fans visible. |
+| jitter | – | – | – | – | – | 16/17 (1) | – | -2.1 | -2.9 | 3.31 | 0.911 | 98.3% / 96.6% | FAIL: unchanged. |
 
 ### ho_dash8 (heldout, heldout, curve visible before)
 
 ![ho_dash8](img/bl_ho_dash8.png)
 
-| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| dopplerscrub | – | – | – | – | – | 8/8 (0) | 19.9 | 16.2 | 0.29 | 0.977 | 5.4% / 13.7% | FAIL in 40-450 Hz: fringe and low lines unchanged. |
-| bandstop | – | – | – | – | – | 3/8 (1) | 2.2 | 4.5 | 3.62 | 0.682 | 25.6% / 100.0% | FAIL above 300 Hz. |
-| bandstop_brick | – | – | – | – | – | 0/8 (1) | 1.9 | 3.8 | 3.85 | 0.632 | 25.9% / 100.0% | Hidden apart from a faint vertical stripe at 34 s. |
-| noise | – | – | – | – | – | 2/8 (4) | 3.1 | -0.3 | 3.41 | 0.598 | 29.8% / 98.7% | Broadband core and the 60-75 s low curve remain. |
-| jitter | – | – | – | – | – | 5/8 (3) | -2.1 | -2.7 | 1.92 | 0.917 | 97.6% / 96.4% | FAIL: unchanged. |
+| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | dopfast usable/events orig → clean | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| dopplerscrub | – | – | – | – | – | 8/8 (0) | – | 19.9 | 16.2 | 0.29 | 0.977 | 5.4% / 13.7% | FAIL in 40-450 Hz: fringe and low lines unchanged. |
+| bandstop | – | – | – | – | – | 3/8 (1) | – | 2.2 | 4.5 | 3.62 | 0.682 | 25.6% / 100.0% | FAIL above 300 Hz. |
+| bandstop_brick | – | – | – | – | – | 0/8 (1) | – | 1.9 | 3.8 | 3.85 | 0.632 | 25.9% / 100.0% | Hidden apart from a faint vertical stripe at 34 s. |
+| noise | – | – | – | – | – | 2/8 (4) | – | 3.1 | -0.3 | 3.41 | 0.598 | 29.8% / 98.7% | Broadband core and the 60-75 s low curve remain. |
+| jitter | – | – | – | – | – | 5/8 (3) | – | -2.1 | -2.7 | 1.92 | 0.917 | 97.6% / 96.4% | FAIL: unchanged. |
 
 ### ho_drone (heldout, heldout, OUT OF SCOPE (not fixed-wing), curve NOT visible before)
 
 ![ho_drone](img/bl_ho_drone.png)
 
-| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| dopplerscrub | – | – | – | – | – | 11/13 (1) | 18.7 | 18.7 | 0.67 | 0.867 | 3.5% / 40.4% | FAIL: stacks unchanged. |
-| bandstop | – | – | – | – | – | 4/13 (1) | 18.4 | 22.1 | 3.22 | 0.712 | 3.3% / 100.0% | FAIL: stacks above 330 Hz visible; broadband slabs. |
-| bandstop_brick | – | – | – | – | – | 1/13 (3) | 17.9 | 20.5 | 3.55 | 0.670 | 3.3% / 100.0% | No lines; on/off segments show as broadband slabs. |
-| noise | – | – | – | – | – | 7/13 (3) | 20.3 | 23.1 | 2.57 | 0.794 | 3.7% / 97.7% | FAIL: strongest lines visible. |
-| jitter | – | – | – | – | – | 9/13 (3) | -2.8 | -2.9 | 4.22 | 0.921 | 99.3% / 96.6% | FAIL: unchanged. |
+| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | dopfast usable/events orig → clean | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| dopplerscrub | – | – | – | – | – | 11/13 (1) | – | 18.7 | 18.7 | 0.67 | 0.867 | 3.5% / 40.4% | FAIL: stacks unchanged. |
+| bandstop | – | – | – | – | – | 4/13 (1) | – | 18.4 | 22.1 | 3.22 | 0.712 | 3.3% / 100.0% | FAIL: stacks above 330 Hz visible; broadband slabs. |
+| bandstop_brick | – | – | – | – | – | 1/13 (3) | – | 17.9 | 20.5 | 3.55 | 0.670 | 3.3% / 100.0% | No lines; on/off segments show as broadband slabs. |
+| noise | – | – | – | – | – | 7/13 (3) | – | 20.3 | 23.1 | 2.57 | 0.794 | 3.7% / 97.7% | FAIL: strongest lines visible. |
+| jitter | – | – | – | – | – | 9/13 (3) | – | -2.8 | -2.9 | 4.22 | 0.921 | 99.3% / 96.6% | FAIL: unchanged. |
 
 ### ho_floatplane (heldout, heldout, curve visible before)
 
 ![ho_floatplane](img/bl_ho_floatplane.png)
 
-| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| dopplerscrub | – | – | – | – | – | 4/10 (7) | 0.2 | 0.6 | 2.34 | 0.555 | 31.4% / 99.1% | PARTIAL in 40-450 Hz: the bending part of the comb is gone, but thin faint flat lines (~60, 140, 200, 290, 410 Hz) remain in the approach (0-12 s). |
-| bandstop | – | – | – | – | – | 4/10 (0) | 0.8 | 4.7 | 6.34 | 0.699 | 10.0% / 100.0% | FAIL: 300-450 Hz comb visible. |
-| bandstop_brick | – | – | – | – | – | 1/10 (0) | 0.6 | 3.2 | 6.79 | 0.638 | 10.0% / 100.0% | Hidden. |
-| noise | – | – | – | – | – | 5/10 (1) | 3.7 | 2.0 | 2.44 | 0.660 | 12.9% / 98.2% | FAIL: bending harmonics visible at 14-19 s. |
-| jitter | – | – | – | – | – | 9/10 (1) | -2.3 | -2.9 | 3.55 | 0.866 | 98.7% / 95.5% | FAIL: unchanged. |
+| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | dopfast usable/events orig → clean | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| dopplerscrub | – | – | – | – | – | 4/10 (7) | – | 0.2 | 0.6 | 2.34 | 0.555 | 31.4% / 99.1% | PARTIAL in 40-450 Hz: the bending part of the comb is gone, but thin faint flat lines (~60, 140, 200, 290, 410 Hz) remain in the approach (0-12 s). |
+| bandstop | – | – | – | – | – | 4/10 (0) | – | 0.8 | 4.7 | 6.34 | 0.699 | 10.0% / 100.0% | FAIL: 300-450 Hz comb visible. |
+| bandstop_brick | – | – | – | – | – | 1/10 (0) | – | 0.6 | 3.2 | 6.79 | 0.638 | 10.0% / 100.0% | Hidden. |
+| noise | – | – | – | – | – | 5/10 (1) | – | 3.7 | 2.0 | 2.44 | 0.660 | 12.9% / 98.2% | FAIL: bending harmonics visible at 14-19 s. |
+| jitter | – | – | – | – | – | 9/10 (1) | – | -2.3 | -2.9 | 3.55 | 0.866 | 98.7% / 95.5% | FAIL: unchanged. |
 
 ### ho_motorcycle (heldout, heldout, OUT OF SCOPE (not fixed-wing), curve NOT visible before)
 
 ![ho_motorcycle](img/bl_ho_motorcycle.png)
 
-| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| dopplerscrub | – | – | – | – | – | 4/4 (0) | 19.8 | 19.5 | 0.30 | 0.986 | 2.5% / 9.5% | FAIL: unchanged by eye. |
-| bandstop | – | – | – | – | – | 1/4 (0) | 13.3 | 16.7 | 4.74 | 0.705 | 9.4% / 100.0% | Lines below 300 Hz gone; 380 Hz line and the loud span (12-13 s) remain. |
-| bandstop_brick | – | – | – | – | – | 0/4 (3) | 12.4 | 15.0 | 5.21 | 0.652 | 9.3% / 100.0% | No lines; loud span shows as a broadband slab. |
-| noise | – | – | – | – | – | 4/4 (3) | 15.2 | 19.3 | 1.50 | 0.812 | 10.1% / 98.3% | Mostly hidden; faint 380 Hz line. |
-| jitter | – | – | – | – | – | 4/4 (3) | -2.7 | -2.7 | 2.81 | 0.925 | 97.5% / 94.3% | FAIL: unchanged. |
+| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | dopfast usable/events orig → clean | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| dopplerscrub | – | – | – | – | – | 4/4 (0) | – | 19.8 | 19.5 | 0.30 | 0.986 | 2.5% / 9.5% | FAIL: unchanged by eye. |
+| bandstop | – | – | – | – | – | 1/4 (0) | – | 13.3 | 16.7 | 4.74 | 0.705 | 9.4% / 100.0% | Lines below 300 Hz gone; 380 Hz line and the loud span (12-13 s) remain. |
+| bandstop_brick | – | – | – | – | – | 0/4 (3) | – | 12.4 | 15.0 | 5.21 | 0.652 | 9.3% / 100.0% | No lines; loud span shows as a broadband slab. |
+| noise | – | – | – | – | – | 4/4 (3) | – | 15.2 | 19.3 | 1.50 | 0.812 | 10.1% / 98.3% | Mostly hidden; faint 380 Hz line. |
+| jitter | – | – | – | – | – | 4/4 (3) | – | -2.7 | -2.7 | 2.81 | 0.925 | 97.5% / 94.3% | FAIL: unchanged. |
 
 ### ho_phone_plane (heldout, heldout, curve visible before)
 
 ![ho_phone_plane](img/bl_ho_phone_plane.png)
 
-| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| dopplerscrub | – | – | – | – | – | 2/3 (2) | 9.5 | 9.8 | 1.16 | 0.864 | 21.3% / 65.4% | PARTIAL: lines in the pass thinned; 250 Hz and other early lines remain. |
-| bandstop | – | – | – | – | – | 1/3 (1) | 8.0 | 11.3 | 4.64 | 0.715 | 11.2% / 100.0% | Curves hidden below 300 Hz, but a huge bright slab 5-11.5 s (pass loudness). |
-| bandstop_brick | – | – | – | – | – | 0/3 (1) | 7.1 | 9.5 | 5.11 | 0.662 | 11.4% / 100.0% | No curves; a full-band bright slab 4.5-11.5 s marks the pass. |
-| noise | – | – | – | – | – | 3/3 (2) | 10.0 | 13.9 | 2.01 | 0.771 | 17.5% / 98.0% | Drooping ~200 Hz harmonic visible at 7-11 s. |
-| jitter | – | – | – | – | – | 3/3 (1) | -2.7 | -2.8 | 3.42 | 0.884 | 98.9% / 98.0% | FAIL: unchanged. |
+| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | dopfast usable/events orig → clean | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| dopplerscrub | – | – | – | – | – | 2/3 (2) | – | 9.5 | 9.8 | 1.16 | 0.864 | 21.3% / 65.4% | PARTIAL: lines in the pass thinned; 250 Hz and other early lines remain. |
+| bandstop | – | – | – | – | – | 1/3 (1) | – | 8.0 | 11.3 | 4.64 | 0.715 | 11.2% / 100.0% | Curves hidden below 300 Hz, but a huge bright slab 5-11.5 s (pass loudness). |
+| bandstop_brick | – | – | – | – | – | 0/3 (1) | – | 7.1 | 9.5 | 5.11 | 0.662 | 11.4% / 100.0% | No curves; a full-band bright slab 4.5-11.5 s marks the pass. |
+| noise | – | – | – | – | – | 3/3 (2) | – | 10.0 | 13.9 | 2.01 | 0.771 | 17.5% / 98.0% | Drooping ~200 Hz harmonic visible at 7-11 s. |
+| jitter | – | – | – | – | – | 3/3 (1) | – | -2.7 | -2.8 | 3.42 | 0.884 | 98.9% / 98.0% | FAIL: unchanged. |

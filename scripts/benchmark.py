@@ -307,7 +307,7 @@ def clip_split(c) -> str:
 
 COLS = ["clip", "split", "set", "scope", "detected (doppler/all)", "true", "matched", "residual dB",
         "contrast orig→clean dB", "smoothed clean dB", "SNR outside dB", "speech SNR dB",
-        "event-box p99 dB (orig→clean)", "box-free ridges z>3: orig → still (new)", "persistent cells % (orig→clean)", "AF z (orig→clean)", "AF ≤-10 dB?", "AF edge dB", "AF var dB / kurt", "AF leftover k·f",
+        "event-box p99 dB (orig→clean)", "box-free ridges z>3: orig → still (new)", "persistent cells % (orig→clean)", "dopfast usable/events orig → clean; pass unknown/known clock", "AF z (orig→clean)", "AF ≤-10 dB?", "AF edge dB", "AF var dB / kurt", "AF leftover k·f",
         "runtime s", "visual verdict"]
 
 
@@ -322,6 +322,22 @@ def af_cells(af):
             fnum(af["edge_step_db"]), f"{fnum(af['var_ratio_db'])} / {fnum(af['kurt_corridor'])}", lh_s]
 
 
+def _pmark(v):
+    return "n/a" if v is None else ("✓" if v else "✗")
+
+
+def _ptally(vals):
+    app = [v for v in vals if v is not None]
+    return f"{sum(app)}/{len(app)}" if app else "n/a"
+
+
+def df_cell(d):
+    if not d or "n_usable_orig" not in d:
+        return "–"
+    return (f"{d['n_usable_orig']}/{d['n_events_orig']} → {d['n_usable_clean']}/{d['n_events_clean']}; "
+            f"{_pmark(d['pass_unknown_clock'])} / {_pmark(d['pass_known_clock'])}")
+
+
 def bf_cells(b):
     if not b:
         return ["–", "–"]
@@ -331,20 +347,30 @@ def bf_cells(b):
             f"{fnum(100 * b['persist_orig'])} → {fnum(100 * b['persist_clean'])}"]
 
 
+def df_tally(rows, sp):
+    ds = [r["dopfast"] for r in rows if r.get("split", "dev") == sp and in_scope(r["clip"])
+          and r.get("dopfast") and "n_usable_orig" in r["dopfast"]]
+    if not ds:
+        return "–"
+    return (f"usable events {sum(d['n_usable_orig'] for d in ds)} → {sum(d['n_usable_clean'] for d in ds)}; "
+            f"pass unknown clock {_ptally([d['pass_unknown_clock'] for d in ds])}, "
+            f"known clock {_ptally([d['pass_known_clock'] for d in ds])} (applicable clips only)")
+
+
 def scope_tally(rows):
     """Headline box-free tally per split, in-scope (fixed-wing) clips only."""
     L = ["## Headline (fixed-wing clips only)", "",
          "Scope is fixed-wing airplanes; clips marked *out of scope* (rotorcraft, drones, cars, "
          "motorcycles) are listed below but excluded here.", "",
-         "| split | clips with box-free check | ridges z>3 before | still z>3 | new z>3 | of which created |",
-         "|---|---|---|---|---|---|"]
+         "| split | clips with box-free check | ridges z>3 before | still z>3 | new z>3 | of which created | **dopfast usable events** (headline) |",
+         "|---|---|---|---|---|---|---|"]
     for sp in ("dev", *HELDOUT_SETS):
         bs = [r["boxfree"] for r in rows if r.get("split", "dev") == sp and in_scope(r["clip"]) and r.get("boxfree")]
         if bs:
             L.append(f"| {sp} | {len(bs)} | {sum(b['n_ridges_orig_z3'] for b in bs)} | "
                      f"{sum(b['n_still_z3'] for b in bs)} | {sum(b['n_new_z3'] for b in bs)} | "
                      + (str(sum(b['n_new_created_z3'] for b in bs)) if all('n_new_created_z3' in b for b in bs)
-                        else "n/a (re-run box-free)") + " |")
+                        else "n/a (re-run box-free)") + " | " + df_tally(rows, sp) + " |")
     return L + [""]
 
 
@@ -376,6 +402,7 @@ def write_md(rows, verdicts):
              "were removed, power not raised) and **seen** (already z>3 along the same curve in the original); "
              "see docs/results/new_ridges.md. **persistent cells** = share of smoothed cells "
              "> 4 dB (white noise: 4.6%; 0 ridges).",
+             "- **dopfast z** (`evaluate.dopfast`; the faster attacker of the Doppler-geolocation paper, sec. 3.2-4.4): matched filter of a whitened log-frequency spectrogram (40-1000 Hz, 0.256 s / 0.125 s) against a bank of exact straight-pass templates f0*g(t-h; v, d) with a 4-harmonic comb, max over pitch, robust median/MAD per shape (evidence E[v, d, s]). z = (peak E - null mean) / null sd, the null being the same peak on the file's time-reversed and frame-shuffled spectrograms; z > 3 = an event the attacker can geolocate from. **at orig event** = the cleaned file's E at the original's peak shape and time (+-1 s), on the same null. It integrates faint plateaus and harmonics that no single ridge shows.",
              "- **event-box p99**: 99th percentile of whitened dB inside the annotated event boxes "
              "(airshow, colsto); pure noise ≈ 7 dB, so → ~7 means the ridges are gone.",
              "- **visual verdict**: written after viewing each PNG (see `verdicts.json`).", "",
@@ -394,7 +421,7 @@ def write_md(rows, verdicts):
             fnum(r["contrast_clean_smoothed_db"]), fnum(r["snr_outside_db"]),
             fnum(r["speech_snr_db"]),
             (f"{fnum(r['box_p99_orig_db'])} → {fnum(r['box_p99_clean_db'])}" if "box_p99_orig_db" in r else "–"),
-            *bf_cells(r.get("boxfree")),
+            *bf_cells(r.get("boxfree")), df_cell(r.get("dopfast")),
             *af_cells(r.get("af")), fnum(r["runtime_s"], 0), v]) + " |")
     lines += ["", "## Images", ""]
     for r in rows:
@@ -422,10 +449,12 @@ def add_boxfree(rows, workdir, only=None):
                 if k in rows:
                     s0, s1 = int((e["start_s"] - 30) * sr), int((e["end_s"] + 30) * sr)
                     rows[k]["boxfree"] = bf.boxfree(x[s0:s1], y[s0:s1], sr)
+                    rows[k]["dopfast"] = ev.dopfast(x[s0:s1], y[s0:s1], sr)
             continue
         if name in rows:
             print("box-free", name, flush=True)
             rows[name]["boxfree"] = bf.boxfree(x, y, sr)
+            rows[name]["dopfast"] = ev.dopfast(x, y, sr)
 
 
 # ------------------------------------------------------------------ main
@@ -502,15 +531,17 @@ def main(argv=None):
                 mm = metrics(x[s0:s1], y[s0:s1], sr, None,
                              [Track(t.t - w[0], t.f, t.amp, kind=t.kind) for t in loc])
                 r.update(base, **mm); r["runtime_s"] = float("nan")
+                r["dopfast"] = ev.dopfast(x[s0:s1], y[s0:s1], sr)
                 rows[r["clip"]] = r
         elif c["set"] in ("airshow", *HELDOUT_SETS):
             m = metrics(x, y, sr, None, det)
             r = evaluate_clip(c["name"], x, y, sr, None, det, fmax=AIRSHOW_FMAX, boxes=c["boxes"] or None)
-            r.update(base, **m); r["boxfree"] = bf.boxfree(x, y, sr); rows[r["clip"]] = r
+            r.update(base, **m); r["boxfree"] = bf.boxfree(x, y, sr)
+            r["dopfast"] = ev.dopfast(x, y, sr); rows[r["clip"]] = r
         else:
             m = metrics(x, y, sr, c["true"], det)
             r = evaluate_clip(c["name"], x, y, sr, c["true"], det, wide=False)
-            r.update(base, **m); rows[r["clip"]] = r
+            r.update(base, **m); r["dopfast"] = ev.dopfast(x, y, sr); rows[r["clip"]] = r
             if c["wide"]:
                 r2 = evaluate_clip(c["name"], x, y, sr, c["true"], det, wide=True, tag="_wide")
                 r2.update(base, **m); rows[r2["clip"]] = r2
