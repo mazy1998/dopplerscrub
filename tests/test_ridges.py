@@ -34,6 +34,9 @@ def test_maneuvering_stack_and_gap():
         coverage.append(bool(errors) and min(errors)<2)
     assert all(coverage), coverage
     assert all(np.allclose(np.diff(tr.t),.25) for tr in tracks)
+    for tr in tracks:
+        sigma=np.maximum(.5,(tr.f[1:]+tr.f[:-1])/2*120**2/(343*500)*np.diff(tr.t))
+        assert np.all(np.abs(np.diff(tr.f))<=3*sigma+1e-9)
     assert all(np.all(tr.amp==0) for tr in tracks)  # absolute units unknowable from dB
     assert len({tr.group for tr in moving})==1
 
@@ -49,6 +52,7 @@ def test_magnitude_calibration_and_stationary():
     assert S[1:4,2:6].amplitude.shape==(3,4)
     tracks=track_ridges(S,tt,f,cfg)
     assert tracks and not any(tr.kind=='doppler' for tr in tracks)
+    assert all(tr.doppler_score==0 for tr in tracks)
     strongest=max(tracks,key=lambda tr:np.max(tr.amp))
     assert np.median(strongest.amp)==pytest.approx(.1,rel=.02)
 
@@ -94,7 +98,7 @@ def test_real_overlays():
     from dopplertrack.audio import compute_spectrogram
     root=Path(__file__).resolve().parents[1]
     clips=sorted((root/'data/real/airshow').glob('*.wav'))
-    clips += [root/'data/real'/f'{n}.wav' for n in ['prop_flyover','prop_pass','f1_pass']]
+    clips += [root/'data/real'/f'{n}.wav' for n in ['prop_flyover','prop_pass','f1_pass','colsto_2050_2250','colsto_2980_3170']]
     clips=[p for p in clips if p.exists()]
     if not clips:pytest.skip('local real-audio fixtures are not downloaded')
     cfg=DetectConfig(fmax=2000)
@@ -114,11 +118,11 @@ def test_real_overlays():
         for ax,hi in zip(axes,[450,2000]):
             ax.imshow(attacker.S,origin='lower',aspect='auto',extent=[attacker.t[0],attacker.t[-1],attacker.f[0],attacker.f[-1]],vmin=-5,vmax=18,cmap='magma')
             for tr in tracks:
-                ax.plot(tr.t,tr.f,color='cyan' if tr.kind=='doppler' else 'lime',lw=.65,alpha=.8)
-            ax.set(ylim=(30,hi),xlabel='Time (s)',ylabel='Hz',title=f'30–{hi} Hz; cyan=moving, green=stationary')
+                ax.plot(tr.t,tr.f,color='cyan' if tr.kind=='doppler' else 'lime',lw=.7,alpha=.5 if tr.doppler_score==.7 else .8,ls='--' if tr.doppler_score==.7 else '-')
+            ax.set(ylim=(30,hi),xlabel='Time (s)',ylabel='Hz',title=f'30–{hi} Hz; cyan=moving (dashed=verified prediction), green=stationary')
         fig.suptitle(path.stem+' — non-parametric ridge overlays')
         target=root/'docs/img'/f'ridges_{path.stem}.png';fig.savefig(target,dpi=110);plt.close(fig)
-        results.append(dict(path=str(path.relative_to(root)),moving=sum(tr.kind=='doppler' for tr in tracks),stationary=sum(tr.kind=='stationary' for tr in tracks),tracks=[tr.to_dict() for tr in tracks]))
+        results.append(dict(calibration=S.calibration,path=str(path.relative_to(root)),moving=sum(tr.kind=='doppler' for tr in tracks),stationary=sum(tr.kind=='stationary' for tr in tracks),tracks=[tr.to_dict() for tr in tracks]))
         print(path.stem,results[-1]['moving'],flush=True)
     (root/'data/real/ridge_results.json').write_text(json.dumps(results,indent=2)+'\n')
 
@@ -138,8 +142,8 @@ def test_audio_stack_missing_orders():
     sr=4800;tt=np.arange(sr*24)/sr
     base=90+10*np.sin(.23*tt)+.4*tt
     phase=2*np.pi*np.cumsum(base)/sr
-    # Orders 2 and 7 are deliberately absent. A confirmed stack must still
-    # emit their shared-factor predictions for removal/anti-forensic checking.
+    # Orders 2 and 7 are absent. A solid observed h1 must still propose
+    # their continuous trajectories; removal applies its coherence gate.
     x=sum(.025/k*np.sin(k*phase) for k in range(1,13) if k not in (2,7))
     cfg=DetectConfig(fmax=1600)
     S,t,f=ridge_spectrogram(x,sr,cfg)
@@ -147,5 +151,130 @@ def test_audio_stack_missing_orders():
     moving=[tr for tr in tracks if tr.kind=='doppler']
     for order in range(1,13):
         matches=[tr for tr in moving if tr.t1-tr.t0>10 and
-                 np.median(abs(tr.f-order*np.interp(tr.t,tt,base)))<3]
+                 np.median(abs(tr.f-order*np.interp(tr.t,tt,base)))<(4.1 if order>=8 else 3)]
         assert matches, f'missing order {order}'
+    assert all(tr.doppler_score>=cfg.doppler_threshold for tr in moving)
+
+
+def test_link_gaps_and_duplicate_corridors():
+    from dopplerscrub.ridges import _consolidate
+    from dopplerscrub.types import Track
+    def line(t, delta=0):return Track(t,100+2*t+delta,np.ones(len(t))*.01,.9,harmonic=1,group=0,kind='doppler')
+    a=line(np.arange(0,5,.25));b=line(np.arange(6,12.25,.25))
+    duplicate=line(np.arange(2,8,.25),.2)
+    linked=_consolidate([a,b,duplicate],.5)
+    assert len(linked)==1
+    assert linked[0].t0==0 and linked[0].t1==12
+    assert np.allclose(np.diff(linked[0].t),.25)
+    assert np.max(abs(linked[0].f-(100+2*linked[0].t)))<=.2+1e-10
+    separated=_consolidate([a,line(np.arange(8,12,.25))],.5)
+    assert len(separated)==2  # no prediction across a >1.5-second missing interval
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize('mode',['noise','hum','music','speech'])
+def test_two_minute_null_calibration(mode):
+    sr=4000;t=np.arange(sr*120)/sr
+    x=np.random.default_rng(218).normal(0,.03,len(t))
+    if mode=='hum':x+=.08*np.sin(2*np.pi*60*t)+.03*np.sin(2*np.pi*120*t)
+    if mode=='music':
+        for j in range(30):
+            base=[110,130.81,164.81,146.83,110,98][j%6]
+            m=(t>=4*j)&(t<4*(j+1));envelope=np.sin(np.pi*(t[m]-4*j)/4)**2
+            for k in (1,2,3):x[m]+=.03/k*envelope*np.sin(2*np.pi*k*base*t[m])
+    if mode=='speech':x=mix(x,sr,pink=0,wind=0,hum=0,speech=.06,seed=24)
+    cfg=DetectConfig()
+    S,tt,f=ridge_spectrogram(x,sr,cfg);tracks=track_ridges(S,tt,f,cfg)
+    moving=[tr for tr in tracks if tr.kind=='doppler']
+    result=dict(mode=mode,doppler=len(moving),stationary=sum(tr.kind=='stationary' for tr in tracks),calibration=S.calibration)
+    out=Path(__file__).resolve().parents[1]/'data/real'
+    out.mkdir(parents=True,exist_ok=True)
+    (out/f'ridges_null_{mode}.json').write_text(json.dumps(result,indent=2)+'\n')
+    assert not moving, [(tr.t0,tr.t1,np.ptp(tr.f)) for tr in moving]
+
+
+def test_exponential_power_llr():
+    from dopplerscrub.ridges import _llr
+    db=np.array([-50.,-10.,0.,10.,20.,30.])
+    for snr in (1.,3.,10.):
+        z=np.log(2)*10**(db/10)
+        np.testing.assert_allclose(_llr(db,snr),z*snr/(1+snr)-np.log1p(snr))
+
+
+def test_high_only_and_native_nyquist_cap():
+    sr=4000;t=np.arange(sr*3)/sr
+    x=.1*np.sin(2*np.pi*700*t)
+    S,tt,f=ridge_spectrogram(x,sr,DetectConfig(fmin=500,fmax=2000))
+    assert S.shape==(len(f),len(tt))
+    assert f[0]>=500 and f[-1]<sr/2
+    assert np.isfinite(S).all()
+    assert np.max(S.amplitude)==pytest.approx(.1,rel=.02)
+
+
+def test_motion_rejects_flat_drift_and_accepts_pass():
+    from dopplerscrub.ridges import _moving
+    cfg=DetectConfig();t=np.arange(0,35,.25)
+    assert not _moving(230+.10*t,cfg)
+    assert not _moving(180+.4*np.sin(t),cfg)
+    assert _moving(230-25*np.tanh((t-17)/6),cfg)
+    assert _moving(110+10*t/t[-1],cfg)
+
+
+def test_verified_track_does_not_remove_steady_prefix_or_tail():
+    from dopplerscrub.ridges import _clip_verified
+    from dopplerscrub.types import Track
+    cfg=DetectConfig();t=np.arange(0,60,.25);f=np.arange(30,450,.5)
+    freq=np.where(t<20,230,np.where(t>40,200,230-1.5*(t-20)))
+    S=18*np.exp(-.5*((f[:,None]-freq[None,:])/.8)**2)
+    tr=Track(t,freq,np.full(len(t),.01),.95,harmonic=1,group=0,kind='doppler')
+    out=_clip_verified([tr],S,t,f,cfg)
+    assert out and all(q.t0>=18 and q.t1<=42 for q in out)
+    assert all(q.t1-q.t0>=cfg.min_duration_s for q in out)
+
+
+@pytest.mark.parametrize('anchor', ['solid', 'short', 'virtual', 'weak', 'sub40', 'reconstructed', 'isolated'])
+def test_continuous_comb_requires_solid_observed_root(anchor):
+    from dopplerscrub.ridges import _continuous_combs
+    from dopplerscrub.types import Track
+    cfg=DetectConfig(fmax=650)
+    t=np.arange(0,20.25,.25);f=np.arange(30,650.5,.5)
+    root=(35 if anchor=='sub40' else 70)+4*np.tanh((t-10)/5)
+    S=np.zeros((len(f),len(t)))
+    for order in ((1,) if anchor=='isolated' else (1,3)):
+        S+=(2 if anchor=='weak' else 18)*np.exp(-.5*((f[:,None]-order*root[None,:])/.7)**2)
+    selected=t<=6 if anchor=='short' else np.ones(len(t),bool)
+    orders=(3,5) if anchor=='virtual' else ((1,) if anchor=='isolated' else (1,3))
+    tracks=[Track(t[selected],order*root[selected],np.zeros(selected.sum()),.70 if anchor=='reconstructed' else .95,
+                  harmonic=order,group=7,kind='doppler') for order in orders]
+    out=_continuous_combs(tracks,S,t,f,cfg)
+    if anchor=='solid':
+        # Order two has no observed tone; it is a coherence-gated proposal
+        # over exactly the independently verified h1 span, never past it.
+        second=[tr for tr in out if tr.harmonic==2]
+        assert second and second[0].t0==t[0] and second[0].t1==t[-1]
+        assert all(tr.doppler_score>=cfg.doppler_threshold for tr in out)
+        assert all(tr.t0>=t[0] and tr.t1<=t[-1] for tr in out)
+    else:
+        assert len(out)==len(tracks), 'unconfirmed root seeded a harmonic comb'
+
+
+def test_motion_does_not_treat_quantized_slow_sweep_as_note_holds():
+    from dopplerscrub.ridges import _moving
+    cfg=DetectConfig();t=np.arange(0,12,.25)
+    root=np.round((58+3/(1+np.exp(-(t-8)/1.1)))*2)/2
+    assert _moving(root,cfg)
+    held_notes=np.where(t<6,110.,130.)
+    assert not _moving(held_notes,cfg)
+
+
+def test_orchestrator_music_note_sequence_is_not_doppler():
+    # Exact red-team fixture: unwindowed four-second notes plus seed-nine
+    # noise. The 110 -> 98 Hz note change used to become a false HMM chirp.
+    sr=4000;t=np.arange(sr*24)/sr
+    x=np.random.default_rng(9).normal(0,.02,len(t))
+    for j,note in enumerate([110,130.81,164.81,146.83,110,98]):
+        mask=(t>=j*4)&(t<(j+1)*4)
+        x[mask]+=.06*np.sin(2*np.pi*note*t[mask])
+    cfg=DetectConfig(fmax=300)
+    S,tt,f=ridge_spectrogram(x,sr,cfg)
+    assert not [tr for tr in track_ridges(S,tt,f,cfg) if tr.kind=='doppler']

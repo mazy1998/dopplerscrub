@@ -51,7 +51,7 @@ class Track:
 @dataclass
 class DetectConfig:
     fmin: float = 30.0          # Hz, lower edge of the searched band
-    fmax: float = 1000.0        # Hz, upper edge (prop blade-pass + harmonics, engines)
+    fmax: float = 2000.0        # Hz, upper edge (prop blade-pass + harmonics up to ~1.9 kHz on close passes)
     work_sr: int = 4000         # analysis sample rate for the low band
     nperseg: int = 8192         # STFT length at work_sr (~0.49 Hz bins)
     hop_s: float = 0.25         # STFT hop
@@ -63,11 +63,12 @@ class DetectConfig:
 
 @dataclass
 class RemoveConfig:
-    method: str = "subtract"    # "subtract" (track-locked sinusoid cancellation) | "mask" (STFT notch)
+    method: str = "vk"          # "vk" (joint Vold-Kalman, default) | "subtract" (track-locked cancellation) | "mask" (STFT notch)
     width_hz: float = 2.0       # notch half-width around the track for the mask method
     pad_s: float = 2.0          # extend each track this far before/after its detected span
     harden: bool = True         # notch + noise-fill each corridor so no curve-shaped notch remains
     remove_kinds: tuple[str, ...] = ("doppler",)
+    harden_min_score: float = 0.5  # noise-fill only tracks the detector confirmed (doppler_score >= this)
 
 
 @dataclass

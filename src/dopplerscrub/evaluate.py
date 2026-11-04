@@ -246,12 +246,47 @@ def _pool_time(spec: Spectrogram, max_cols: int = 2400) -> Spectrogram:
     return Spectrogram(t, spec.f, S)
 
 
+FIG_W = 12.0     # inches
+PNG_DPI = 90
+PNG_COLORS = 80
+
+
+PNG_MAX_KB = 400
+
+
+def save_png(fig, out_png, dpi: int | None = None, colors: int | None = None,
+             max_kb: float = PNG_MAX_KB):
+    """Save a figure as a small palette PNG (target <= max_kb, ~150-400 kB): render at
+    `dpi`, quantise to an adaptive palette with PIL (pngquant-style); if still too
+    big, step down colours, then dpi (keeps figures readable)."""
+    import io as _io
+    from PIL import Image
+    dpi = dpi or PNG_DPI
+    colors = PNG_COLORS if colors is None else colors
+    Path(out_png).parent.mkdir(parents=True, exist_ok=True)
+    data = b""
+    for d, c in [(dpi, colors), (dpi, 64), (dpi, 48), (int(dpi * 0.85), 48), (int(dpi * 0.75), 40)]:
+        buf = _io.BytesIO()
+        fig.savefig(buf, dpi=d, format="png")
+        if not c:
+            data = buf.getvalue()
+            break
+        buf.seek(0)
+        img = Image.open(buf).convert("RGB").convert("P", palette=Image.ADAPTIVE, colors=c)
+        out = _io.BytesIO()
+        img.save(out, format="png", optimize=True)
+        data = out.getvalue()
+        if len(data) <= max_kb * 1024:
+            break
+    Path(out_png).write_bytes(data)
+
+
 def _imshow(ax, spec: Spectrogram, vmin, vmax, cmap):
     spec = _pool_time(spec)
     dt = spec.dt; df = spec.df
     ext = [spec.t[0] - dt / 2, spec.t[-1] + dt / 2, spec.f[0] - df / 2, spec.f[-1] + df / 2]
     return ax.imshow(spec.S, origin="lower", aspect="auto", extent=ext, vmin=vmin, vmax=vmax,
-                     cmap=cmap, interpolation="antialiased")
+                     cmap=cmap, interpolation="antialiased", rasterized=True)
 
 
 def _overlay(ax, tracks, window, color_doppler="#00e5ff", color_other="#7CFC00"):
@@ -280,9 +315,11 @@ def render_before_after(x_orig, x_clean, sr, out_png, tracks: Sequence[Track] | 
                         fmax: float = FMAX, vmin: float = -3.0, vmax: float = 15.0,
                         cmap: str = "magma", views: dict | None = None,
                         whiten_window_s: float | None = WHITEN_S,
-                        overlay_label: str = "cyan = doppler, green = other") -> dict:
+                        overlay_label: str = "cyan = doppler, green = other",
+                        boxes: Sequence[tuple] | None = None) -> dict:
     """Stacked panels on one colour scale: original, cleaned, removed (orig-clean), and,
-    when `tracks` is given, a separate copy of the original with tracks dashed on top.
+    when `tracks` (or annotated event `boxes` = (t0, t1, f0, f1)) are given, a separate
+    copy of the original with them drawn on top.
     The cleaned panel is never annotated.
 
     window: (t0, t1) or (t0, t1, f0, f1) in seconds / Hz.
@@ -300,17 +337,21 @@ def render_before_after(x_orig, x_clean, sr, out_png, tracks: Sequence[Track] | 
     panels = [("Original (attacker view, whitened)", views["orig"]),
               ("Cleaned (attacker view, whitened) - unannotated", views["clean"]),
               ("Removed content (orig - clean, on original's baseline)", views["diff"])]
-    if tracks:
-        panels.append((f"Original + tracks (dashed: {overlay_label})", views["orig"]))
-    fig, axes = plt.subplots(len(panels), 1, figsize=(13, 2.9 * len(panels)), sharex=True,
+    if tracks or boxes:
+        lab = overlay_label + ("; white boxes = annotated events" if boxes else "")
+        panels.append((f"Original + tracks (dashed: {lab})", views["orig"]))
+    fig, axes = plt.subplots(len(panels), 1, figsize=(FIG_W, 2.5 * len(panels)), sharex=True,
                              constrained_layout=True)
     im = None
     for i, (ax, (name, spec)) in enumerate(zip(axes, panels)):
         im = _imshow(ax, _crop_for_window(spec, window), vmin, vmax, cmap)
         ax.set_ylabel("Hz")
         ax.set_title(name, fontsize=10, loc="left")
-        if tracks and i == len(panels) - 1:
+        if (tracks or boxes) and i == len(panels) - 1:
             _overlay(ax, tracks, window)
+            for b in boxes or []:   # (t0, t1, f0, f1)
+                ax.add_patch(__import__("matplotlib.patches", fromlist=["Rectangle"]).Rectangle(
+                    (b[0], b[2]), b[1] - b[0], b[3] - b[2], fill=False, ec="white", lw=1.0, ls="--"))
         elif window is not None:
             ax.set_xlim(window[0], window[1])
             if len(window) == 4:
@@ -318,8 +359,7 @@ def render_before_after(x_orig, x_clean, sr, out_png, tracks: Sequence[Track] | 
     axes[-1].set_xlabel("time (s)")
     fig.colorbar(im, ax=axes, shrink=0.9, label="dB above per-bin median")
     fig.suptitle(title, fontsize=12)
-    Path(out_png).parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_png, dpi=110)
+    save_png(fig, out_png)
     plt.close(fig)
     return views
 
@@ -356,7 +396,7 @@ def render_attacker_views(x_clean, sr, out_png, tracks: Sequence[Track] | None =
     if tracks:
         panels.append(("e) as (d) with tracks dashed", sm, -2, 2, "RdBu_r"))
     nrow = len(panels) + (1 if tracks else 0)
-    fig, axs = plt.subplots(nrow, 1, figsize=(13, 2.7 * nrow), constrained_layout=True)
+    fig, axs = plt.subplots(nrow, 1, figsize=(FIG_W, 2.3 * nrow), constrained_layout=True)
     axs = np.atleast_1d(axs)
     axes = axs[:len(panels)]
     for ax in axes[1:]:
@@ -400,8 +440,7 @@ def render_attacker_views(x_clean, sr, out_png, tracks: Sequence[Track] | None =
         ax.set_title("f) curve-aligned profile (bump at 0 = ghost, dip = notch)", fontsize=10, loc="left")
         ax.legend(loc="upper left", fontsize=7, ncol=2)
     fig.suptitle(title, fontsize=12)
-    Path(out_png).parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_png, dpi=110)
+    save_png(fig, out_png)
     plt.close(fig)
     out = {}
     if tracks:
@@ -750,3 +789,136 @@ def anti_forensics(x_orig, x_clean, sr, tracks: Sequence[Track], width_hz: float
     rc = out["residual"]["clean"]
     out["pass_target"] = bool(np.isfinite(rc["upper95_db"]) and rc["upper95_db"] <= target_db)
     return out
+
+
+def box_stats(spec: Spectrogram, box: tuple, hi_db: float = 8.0) -> dict:
+    """Ridge content of an annotated event box (t0, t1, f0, f1) without tracks:
+    p99 of whitened dB and the fraction of cells above `hi_db`. Compare orig vs clean;
+    a successful scrub pulls both toward the noise values (p99 ~ 7 dB, frac ~ 0.5%)."""
+    c = spec.crop(box[0], box[1], box[2], box[3])
+    if c.S.size == 0:
+        return {"p99_db": float("nan"), "frac_hi": float("nan")}
+    return {"p99_db": float(np.percentile(c.S, 99)), "frac_hi": float(np.mean(c.S > hi_db))}
+
+
+# ------------------------------------------------------------------ baseline-comparison metrics
+
+def ridge_excess_db(spec: Spectrogram, tracks: Sequence[Track], half_hz: float = 8.0,
+                    ctrl_shifts=(-30.0, -24.0, 24.0, 30.0)) -> float:
+    """Shift-TOLERANT curve visibility: per frame, the max whitened dB within +-half_hz of
+    f(t), averaged over the pass, minus the same on control curves shifted 24-30 Hz.
+    Unlike track_contrast_db this still sees a ridge that was wobbled or pitch-shifted
+    by a few Hz (e.g. the jitter baseline). ~0 = no ridge near the curve."""
+    offs = np.arange(-half_hz, half_hz + 1e-9, spec.df)
+
+    def band_max(shift):
+        vals = []
+        for tt, ff in _track_points(tracks):
+            m = np.stack([spec.sample(tt, ff + shift + o) for o in offs])
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)
+                v = np.nanmax(m, axis=0)
+            vals.append(v[np.isfinite(v)])
+        v = np.concatenate(vals) if vals else np.array([])
+        return float(np.mean(v)) if len(v) else float("nan")
+
+    on = band_max(0.0)
+    ctrl = [band_max(s) for s in ctrl_shifts]
+    ctrl = [c for c in ctrl if np.isfinite(c)]
+    return on - float(np.mean(ctrl)) if ctrl and np.isfinite(on) else float("nan")
+
+
+def _stft_power(x, sr, win_s=0.046):
+    n = int(2 ** np.round(np.log2(win_s * sr)))
+    f, t, Z = ss.stft(x, sr, nperseg=n, noverlap=n // 2)
+    return f, t, np.abs(Z) ** 2
+
+
+def log_spectral_distance(x_orig, x_clean, sr, fmin: float = 0.0, fmax: float | None = None,
+                          dyn_db: float = 80.0) -> float:
+    """Mean over frames of the RMS (over frequency) dB difference between the ~46 ms power
+    spectra of original and cleaned, floored at (global max - dyn_db). 0 = identical.
+    Tolerant to ms-scale time shifts (unlike waveform SNR)."""
+    a, b = _align(_mono(x_orig), _mono(x_clean))
+    f, _, Pa = _stft_power(a, sr)
+    _, _, Pb = _stft_power(b, sr)
+    band = (f >= fmin) & (f <= (fmax or sr / 2))
+    floor = max(Pa.max(), 1e-30) * 10 ** (-dyn_db / 10)
+    La = 10 * np.log10(np.maximum(Pa[band], floor)); Lb = 10 * np.log10(np.maximum(Pb[band], floor))
+    return float(np.mean(np.sqrt(np.mean((La - Lb) ** 2, axis=0))))
+
+
+def stoi_like(x_orig, x_clean, sr) -> float:
+    """STOI-style intelligibility proxy, implemented from Taal et al., IEEE TASLP 19(7),
+    2011 (pystoi/PESQ/ViSQOL are not dependencies): 10 kHz, 256-pt Hann frames with 50%
+    overlap, silent frames (>40 dB below the loudest) dropped, 15 one-third-octave bands
+    from 150 Hz, 30-frame (384 ms) segments, clean-normalised and clipped (beta = -15 dB)
+    envelopes, mean correlation. 1 = identical, about 0.4-0.5 = heavily degraded. It
+    measures speech-envelope preservation, not tonal fidelity."""
+    fs = 10000
+    a, b = _align(_resample(_mono(x_orig), sr, fs).astype(np.float64),
+                  _resample(_mono(x_clean), sr, fs).astype(np.float64))
+    N, hop = 256, 128
+    w = np.hanning(N + 2)[1:-1]
+    nfr = (len(a) - N) // hop + 1
+    if nfr < 30:
+        return float("nan")
+    idx = np.arange(nfr)[:, None] * hop + np.arange(N)[None]
+    fa, fb = a[idx] * w, b[idx] * w
+    en = 20 * np.log10(np.linalg.norm(fa, axis=1) + 1e-20)
+    keep = en > en.max() - 40
+    fa, fb = fa[keep], fb[keep]
+    if len(fa) < 30:
+        return float("nan")
+    nfft = 512
+    Xa = np.abs(np.fft.rfft(fa, nfft, axis=1)) ** 2
+    Xb = np.abs(np.fft.rfft(fb, nfft, axis=1)) ** 2
+    freqs = np.fft.rfftfreq(nfft, 1 / fs)
+    cf = 150 * 2 ** (np.arange(15) / 3)
+    A = np.zeros((15, len(freqs)))
+    for i, c in enumerate(cf):
+        lo, hi = c * 2 ** (-1 / 6), c * 2 ** (1 / 6)
+        A[i, (freqs >= lo) & (freqs < hi)] = 1
+    Ea = np.sqrt(Xa @ A.T).T; Eb = np.sqrt(Xb @ A.T).T          # (15, frames)
+    L, beta = 30, 10 ** (15 / 20)
+    ds = []
+    for m in range(L, Ea.shape[1] + 1):
+        sa, sb = Ea[:, m - L:m], Eb[:, m - L:m]
+        alpha = np.linalg.norm(sa, axis=1, keepdims=True) / (np.linalg.norm(sb, axis=1, keepdims=True) + 1e-20)
+        sbn = np.minimum(sb * alpha, sa * (1 + beta))
+        sa0 = sa - sa.mean(1, keepdims=True); sb0 = sbn - sbn.mean(1, keepdims=True)
+        num = (sa0 * sb0).sum(1)
+        den = np.linalg.norm(sa0, axis=1) * np.linalg.norm(sb0, axis=1) + 1e-20
+        ds.append(num / den)
+    return float(np.mean(ds))
+
+
+def tf_modified_fraction(x_orig, x_clean, sr, thresh_db: float = -20.0, dyn_db: float = 60.0,
+                         bands=((0.0, None), (40.0, 450.0), (450.0, None))) -> dict:
+    """Share of the (~46 ms) time-frequency plane that was modified: cells where
+    |orig - clean|^2 > 10^(thresh_db/10) * |orig|^2, among cells within dyn_db of the
+    loudest cell (silence ignored). Returned per band {"lo-hi": fraction}."""
+    a, b = _align(_mono(x_orig), _mono(x_clean))
+    f, _, Pa = _stft_power(a, sr)
+    _, _, Pd = _stft_power(a - b, sr)
+    floor = Pa.max() * 10 ** (-dyn_db / 10)
+    act = Pa > floor
+    mod = Pd > 10 ** (thresh_db / 10) * Pa
+    out = {}
+    for lo, hi in bands:
+        hi_ = hi or sr / 2
+        m = (f >= lo) & (f <= hi_)
+        den = act[m].sum()
+        out[f"{lo:.0f}-{hi_:.0f}"] = float((mod[m] & act[m]).sum() / den) if den else float("nan")
+    return out
+
+
+def fidelity_boxes(x_orig, x_clean, sr, boxes: Sequence[tuple]) -> float:
+    """SNR (dB) orig vs orig-clean OUTSIDE annotated event boxes (t0, t1, f0, f1)."""
+    a, b = _align(_mono(x_orig).astype(np.float64), _mono(x_clean).astype(np.float64))
+    f, t, Pa = _stft_power(a, sr)
+    _, _, Pd = _stft_power(a - b, sr)
+    keep = np.ones(Pa.shape, bool)
+    for t0, t1, f0, f1 in boxes:
+        keep[np.ix_((f >= f0) & (f <= f1), (t >= t0) & (t <= t1))] = False
+    return _snr(float(Pa[keep].sum()), float(Pd[keep].sum()))

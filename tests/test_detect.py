@@ -34,6 +34,13 @@ def test_physics():
 @pytest.mark.parametrize('db',[-25,-35,-40])
 def test_flyover(db):
     x,sr = scene(db)
+    if db<=-35:
+        from dopplertrack.audio import compute_spectrogram
+        sp=compute_spectrogram(x,sr)
+        curve=ideal_curve(sp.t,110,65,350,18)
+        contrast=float(np.mean(sp.sample(sp.t,curve))-.5*np.mean(sp.sample(sp.t,curve-5)+sp.sample(sp.t,curve+5)))
+        if contrast<1:
+            pytest.xfail(f'attacker-view contrast {contrast:.3f} dB < 1 dB visibility criterion')
     tracks = [q for q in detect_tracks(x,sr,DetectConfig(fmax=300)) if q.kind=='doppler']
     assert tracks
     errors = [np.sqrt(np.mean((q.f-ideal_curve(q.t,110,65,350,18))**2)) for q in tracks]
@@ -68,8 +75,9 @@ def test_empty_and_stereo():
 
 def test_stationary_reported():
     sr=4000
-    t=np.arange(sr*15)/sr
-    tracks=detect_tracks(.1*np.sin(2*np.pi*60*t),sr,DetectConfig(fmax=200))
+    t=np.arange(sr*30)/sr
+    x=(.001+.099*(t<10))*np.sin(2*np.pi*60*t)
+    tracks=detect_tracks(x,sr,DetectConfig(fmax=200))
     assert any(q.kind=='stationary' and abs(np.median(q.f)-60)<.1 for q in tracks)
 
 
@@ -123,7 +131,7 @@ def test_ridge_merge_contract(monkeypatch):
         return [Track(grid,np.linspace(100,90,len(grid)),np.ones(len(grid))*.01,.8,kind='doppler')]
     monkeypatch.setitem(sys.modules,'dopplerscrub.ridges',types.SimpleNamespace(track_ridges=tracker))
     out=detect_tracks(np.zeros(4000*10),4000,DetectConfig(fmax=200))
-    assert called and any(q.fit is None and q.kind=='doppler' for q in out)
+    assert called and not any(q.kind=='doppler' for q in out)
 
 
 def test_visible_metric_ignores_outside_band():
@@ -159,3 +167,220 @@ def test_llr_formula_and_shared_harmonics():
     s=np.zeros((len(f),8));s[np.isin(f,[50,100,150]),:]=10
     h=_harmonic_spectrum(s,f)
     assert h[np.argmin(abs(f-50))].mean()>h[np.argmin(abs(f-70))].mean()
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize('start,end',[(2050,2250),(2980,3170)])
+def test_real_colsto_events(start,end):
+    from pathlib import Path
+    import subprocess,json,time
+    if not Path('data/real/colsto.wav').exists():pytest.skip('real fixture unavailable')
+    sr=16000
+    raw=subprocess.run(['ffmpeg','-v','error','-ss',str(start),'-t',str(end-start),'-i','data/real/colsto.wav','-ac','1','-ar',str(sr),'-f','f32le','-'],check=True,capture_output=True).stdout
+    x=np.frombuffer(raw,dtype=np.float32)
+    begin=time.monotonic();found=detect_tracks(x,sr);runtime=time.monotonic()-begin
+    moving=[q for q in found if q.kind=='doppler']
+    print('real crop',start,end,'runtime',runtime,'moving',len(moving),flush=True)
+    Path(f'/tmp/colsto_{start}_tracks.json').write_text(json.dumps({'runtime_s':runtime,'tracks':[q.to_dict() for q in found]}))
+    assert any(q.t1-q.t0>30 and 95<np.median(q.f)<200 and q.f[0]-q.f[-1]>15 for q in moving)
+    if start==2980:
+        for when,lower,upper in [(3050,310,355),(3097,215,240)]:
+            assert any(q.harmonic==2 and q.t0<=when-start<=q.t1 and lower<=np.interp(when-start,q.t,q.f)<=upper for q in moving)
+    for q in found:
+        if q.kind=='stationary':assert q.t1-q.t0>=5 and np.std(q.f)<.5
+        assert np.all(np.isfinite(q.f)) and np.max(q.f)<=DetectConfig().fmax
+        if q.fit:
+            assert q.fit['v']<=150 and q.fit['d_cpa']>=50
+            assert q.fit['f0']/q.harmonic>=40
+
+
+def test_empty_external_tracks_are_filtered(monkeypatch):
+    import sys,types
+    from dopplerscrub.types import Track
+    def tracker(s,t,f,cfg):
+        return [Track(np.array([]),np.array([]),np.array([]),kind='doppler')]
+    monkeypatch.setitem(sys.modules,'dopplerscrub.ridges',types.SimpleNamespace(track_ridges=tracker))
+    out=detect_tracks(np.zeros(4000*10),4000,DetectConfig(fmax=200))
+    assert all(len(q.t)>=2 for q in out)
+
+
+def test_stationary_hygiene():
+    from dopplerscrub.detect import _spectrogram,_sample
+    sr=4000;t=np.arange(sr*30)/sr
+    x=(.001+.099*(t<10))*np.sin(2*np.pi*60*t)
+    frequency=150+3*np.floor(t/2)
+    x+=.02*np.sin(2*np.pi*np.cumsum(frequency)/sr)
+    cfg=DetectConfig(fmax=300)
+    tracks=detect_tracks(x,sr,cfg)
+    stationary=[q for q in tracks if q.kind=='stationary']
+    assert stationary
+    times,f,_,s=_spectrogram(x,sr,cfg)
+    for q in stationary:
+        assert q.t1-q.t0>=5 and np.std(q.f)<.5
+        m=(times>=q.t0)&(times<=q.t1)
+        assert np.mean(_sample(s[:,m],f,np.interp(times[m],q.t,q.f)))>=3
+
+
+def test_known_harmonics_bridge_parent_gap():
+    from dopplerscrub.detect import _probe_known_harmonics
+    from dopplerscrub.types import Track
+    t=np.arange(0,30,.25);f=np.arange(30.,400.,.5)
+    fundamental=130-t
+    s=np.full((len(f),len(t)),-1.)
+    for k in (2,3):
+        s+=8*np.exp(-.5*((f[:,None]-k*fundamental[None,:])/.4)**2)
+    a=t<=10;b=t>=13
+    parents=[Track(t[m],fundamental[m],np.ones(m.sum())*.01,.9,None,1,7,'doppler') for m in (a,b)]
+    found=_probe_known_harmonics(parents,t,f,np.ones_like(s)*.01,s,DetectConfig(fmax=400))
+    for k in (2,3):
+        assert any(q.harmonic==k and q.t0<10 and q.t1>13 and q.group==7 for q in found)
+
+
+def test_verified_harmonic_order_above_ten():
+    from dopplerscrub.detect import _probe_known_harmonics
+    from dopplerscrub.types import Track
+    t=np.arange(0,30,.25);f=np.arange(30.,2000.,.5)
+    fundamental=110-.2*t
+    s=np.full((len(f),len(t)),-1.)
+    s+=9*np.exp(-.5*((f[:,None]-17*fundamental[None,:])/.4)**2)
+    s+=9*np.exp(-.5*((f[:,None]-2*fundamental[None,:])/.4)**2)
+    parent=Track(t,fundamental,np.ones(len(t))*.01,.9,None,1,4,'doppler')
+    found=_probe_known_harmonics([parent],t,f,np.ones_like(s)*.01,s,DetectConfig())
+    assert any(q.harmonic==17 and np.max(q.f)>1800 and q.group==4 for q in found)
+
+
+def test_multiresolution_analysis_covers_two_khz():
+    from dopplerscrub.detect import _spectrogram
+    sr=8000;t=np.arange(4*sr)/sr
+    result=_spectrogram(.1*np.sin(2*np.pi*1900*t),sr,DetectConfig())
+    times,f,amp,s=result
+    assert f[-1]>=1999 and amp.shape==s.shape==(len(f),len(times))
+    assert abs(f[np.argmax(np.median(amp,axis=1))]-1900)<1
+
+
+def test_confirmed_harmonic_follows_whole_parent_span():
+    from dopplerscrub.detect import _probe_known_harmonics
+    from dopplerscrub.types import Track
+    t=np.arange(0,30,.25);f=np.arange(30.,400.,.5);base=130-.3*t
+    s=np.full((len(f),len(t)),-1.)
+    visible=(t>=5)&(t<=20)
+    s+=4*np.exp(-.5*((f[:,None]-2*base[None,:])/.4)**2)*visible
+    parent=Track(t,base,np.ones(len(t))*.01,.9,None,1,4,'doppler')
+    sibling=Track(t,3*base,np.ones(len(t))*.01,.9,None,3,4,'doppler')
+    tracks=_probe_known_harmonics([parent,sibling],t,f,np.ones_like(s)*.01,s,DetectConfig(fmax=400))
+    tracks=[q for q in tracks if q.harmonic==2]
+    assert tracks and all(q.t0==parent.t0 and q.t1==parent.t1 for q in tracks)
+
+
+def test_final_motion_gate_and_cross_detector_dedupe():
+    from dopplerscrub.detect import _motion_kind,_dedupe_tracks
+    from dopplerscrub.types import Track
+    cfg=DetectConfig();t=np.arange(0,40,.25)
+    flat=Track(t,230+.1*np.sin(t),np.ones(len(t)),.9,None,1,1,'doppler')
+    moving=Track(t,260-.8*t,np.ones(len(t)),.9,None,1,2,'doppler')
+    duplicate=Track(t.copy(),moving.f+.1,np.ones(len(t)),.9,None,1,9,'doppler')
+    jitter=Track(t,110+4*np.sin(2*np.pi*t/2),np.ones(len(t)),.9,None,1,3,'doppler')
+    assert _motion_kind(flat,cfg)=='stationary'
+    assert _motion_kind(moving,cfg)=='doppler'
+    assert _motion_kind(jitter,cfg) is None
+    notes=Track(t,np.where(t<20,110.,98.),np.ones(len(t)),.95,None,1,4,'doppler')
+    assert _motion_kind(notes,cfg,'verified') is None
+    assert len(_dedupe_tracks([moving,duplicate],cfg))==1
+
+
+def test_batched_simplex_matches_scalar_search():
+    from scipy.optimize import minimize
+    from dopplerscrub.detect import _refine_curves,_sample,_C
+    f=np.arange(30.,300.,.5);t=np.arange(1.,60.,.25)
+    curve=ideal_curve(t,110,65,350,25)
+    s=np.exp(-.5*((f[:,None]-curve)/.8)**2)
+    seeds=np.array([[111.,62.,360.,26.],[109.,68.,330.,24.]])
+    def objective(p):
+        if not(40<p[0]<f[-1] and 5<p[1]<=150 and 50<=p[2]<50000 and t[0]+5<p[3]+p[2]/_C<t[-1]-5):return 100.
+        q=ideal_curve(t,*p)
+        if np.any((q<f[0])|(q>f[-1])):return 100.
+        return -float(np.mean(_sample(s,f,q)))
+    for seed,result in zip(seeds,_refine_curves(t,f,s,seeds)):
+        scalar=minimize(objective,seed,method='Nelder-Mead',options={'maxiter':180,'xatol':.01}).x
+        assert abs(objective(result)-objective(scalar))<1e-8
+
+
+def test_verified_maneuver_merge_preserves_continuous_comb(monkeypatch):
+    import sys,types
+    from dopplerscrub.types import Track
+    sr=4000;time=np.arange(sr*32)/sr
+    base=100+12*np.sin(2*np.pi*time/16)
+    x=.08*np.sin(2*np.pi*np.cumsum(base)/sr)
+    grid=np.arange(2.,30.,.25);root=np.interp(grid,time,base)
+    def tracker(s,t,f,cfg):
+        return [Track(grid.copy(),k*root,np.ones(len(grid))*.01,.7,None,k,2,'doppler') for k in (1,2,3)]
+    monkeypatch.setitem(sys.modules,'dopplerscrub.ridges',types.SimpleNamespace(track_ridges=tracker))
+    out=detect_tracks(x,sr,DetectConfig(fmax=400))
+    moving=[q for q in out if q.kind=='doppler']
+    assert moving
+    assert all(q.doppler_score>=.5 for q in moving)
+    for k in (1,2,3):
+        assert any(q.harmonic==k and q.t0<=2 and q.t1>=29.75 for q in moving)
+
+
+def test_duplicate_harmonic_does_not_seed_second_source():
+    from dopplerscrub.detect import _consolidate_families,_dedupe_tracks
+    from dopplerscrub.types import Track
+    t=np.arange(0.,40.,.25);root=130-.6*t
+    tracks=[Track(t,k*root,np.ones(len(t)),.8,None,k,2,'doppler') for k in (1,2,3)]
+    tracks.append(Track(t,2*root+.2,np.ones(len(t)),.8,None,1,9,'doppler'))
+    trusted={9}
+    tracks=_consolidate_families(tracks,DetectConfig(),trusted)
+    result=_dedupe_tracks(tracks,DetectConfig(),trusted)
+    assert len(result)==3 and {q.group for q in result}=={2}
+    assert 2 in trusted
+
+
+def test_fused_ridge_view_resolves_fast_low_band_chirp():
+    from dopplerscrub.detect import _spectrogram,_sample
+    sr=4000;time=np.arange(sr*10)/sr;frequency=80+20*time
+    rng=np.random.default_rng(112)
+    x=.02*np.sin(2*np.pi*np.cumsum(frequency)/sr)+.05*rng.normal(size=len(time))
+    t,f,amp,long_view=_spectrogram(x,sr,DetectConfig(fmax=400))
+    curve=80+20*t
+    long_brightness=_sample(long_view,f,curve)
+    fused_brightness=_sample(long_view.ridge_view,f,curve)
+    assert np.mean(fused_brightness-long_brightness)>2
+    assert np.all(long_view.ridge_view>=long_view)
+    assert np.all(long_view.ridge_amplitude>=amp)
+
+
+def test_measured_sub40_family_is_not_relabelled_as_new_fundamentals(monkeypatch):
+    import sys,types
+    import dopplerscrub.detect as detector
+    from dopplerscrub.types import Track
+    t=np.arange(1.,13.,.25);f=np.arange(30.,201.,.5);root=37-.25*t
+    amp=np.ones((len(f),len(t)))*.01;s=np.ones_like(amp)*-1
+    observed=[Track(t.copy(),k*root,np.ones(len(t))*.02,.9,None,k,4,'doppler') for k in (2,3)]
+    monkeypatch.setattr(detector,'_spectrogram',lambda *args:(t,f,amp,s))
+    monkeypatch.setattr(detector,'_bright_ridges',lambda *args:[])
+    monkeypatch.setattr(detector,'_steady_lines',lambda *args:[])
+    monkeypatch.setitem(sys.modules,'dopplerscrub.ridges',types.SimpleNamespace(track_ridges=lambda *args:observed))
+    result=detect_tracks(np.zeros(14*4000),4000,DetectConfig(fmax=200))
+    assert len(result)==2 and {q.harmonic for q in result}=={2,3}
+    assert all(q.kind=='doppler' and q.doppler_score>=.5 for q in result)
+
+
+def test_isolated_parent_does_not_probe_scattered_noise_into_a_comb():
+    from dopplerscrub.detect import _probe_known_harmonics
+    from dopplerscrub.types import Track
+    t=np.arange(0.,60.,.25);f=np.arange(30.,1000.,.5);root=120-.3*t
+    rng=np.random.default_rng(661)
+    s=20*np.log10(np.maximum(rng.rayleigh(size=(len(f),len(t))),1e-9)/np.sqrt(2*np.log(2)))
+    parent=Track(t,root,np.ones(len(t))*.01,.9,None,1,5,'doppler')
+    result=_probe_known_harmonics([parent],t,f,np.ones_like(s)*.01,s,DetectConfig(fmax=1000))
+    assert result==[]
+
+
+def test_source_grouping_compares_overlap_not_whole_span_medians():
+    from dopplerscrub.detect import _consolidate_families
+    from dopplerscrub.types import Track
+    t=np.arange(0.,100.,.25);root=200-t;early=t<=20
+    tracks=[Track(t,root,np.ones(len(t)),.9,None,1,3,'doppler'),Track(t[early],root[early],np.ones(early.sum()),.9,None,1,8,'doppler')]
+    result=_consolidate_families(tracks,DetectConfig(),{8})
+    assert len({q.group for q in result})==1

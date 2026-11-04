@@ -8,6 +8,10 @@ from pathlib import Path
 from .types import DetectConfig, RemoveConfig
 
 
+def _log(msg: str) -> None:
+    print(f"[dopplerscrub] {msg}", file=sys.stderr, flush=True)
+
+
 def _default_out(p: Path) -> Path:
     return p.with_name(f"{p.stem}.scrubbed{p.suffix}")
 
@@ -22,19 +26,27 @@ def cmd_clean(a) -> int:
         src = Path(src)
         dst = Path(a.output) if a.output and len(a.inputs) == 1 else (
             Path(a.output) / src.name if a.output else _default_out(src))
-        rep = scrub(src, dst, dcfg, rcfg, passes=a.passes,
-                    strip_metadata=not a.keep_metadata,
-                    report_path=dst.with_suffix(dst.suffix + ".json") if a.report else None)
+        if not src.exists():
+            print(f"error: {src}: no such file", file=sys.stderr)
+            return 2
+        if dst.resolve() == src.resolve():
+            print(f"error: refusing to overwrite the input {src}", file=sys.stderr)
+            return 2
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        log = _log if not a.quiet else (lambda *_: None)
+        rep, x, y, sr = scrub(src, dst, dcfg, rcfg, passes=a.passes,
+                              strip_metadata=not a.keep_metadata,
+                              report_path=dst.with_suffix(dst.suffix + ".json") if a.report else None,
+                              log=log, return_audio=True)
         print(f"{src} -> {dst}: {rep.removed} Doppler tone(s) removed "
               f"({len(rep.tracks)} tones seen, {rep.duration_s:.0f}s audio; {'; '.join(rep.notes)})")
+        if a.report:
+            print(f"  report: {dst.with_suffix(dst.suffix + '.json')}")
         if a.plot:
-            from . import io
             from .evaluate import render_before_after
-            x, sr, _ = io.load(src)
-            y, _, _ = io.load(dst, sr=sr)
-            n = min(len(x), len(y))
             png = dst.with_suffix(".png")
-            render_before_after(x[:n], y[:n], sr, png, tracks=rep.tracks, title=src.name)
+            log("rendering before/after spectrogram ...")
+            render_before_after(x, y, sr, png, tracks=rep.tracks, title=src.name)
             print(f"  spectrogram: {png}")
     return 0
 
@@ -60,7 +72,8 @@ def main(argv=None) -> int:
     c = sub.add_parser("clean", help="remove Doppler tones from audio/video files")
     c.add_argument("inputs", nargs="+")
     c.add_argument("-o", "--output", help="output file (single input) or directory")
-    c.add_argument("--method", choices=["subtract", "mask"], default="subtract")
+    c.add_argument("--method", choices=["vk", "subtract", "mask"], default=RemoveConfig.method,
+                   help="removal method (default: %(default)s, joint Vold-Kalman)")
     c.add_argument("--no-harden", dest="harden", action="store_false",
                    help="skip the notch + noise-fill step (leaves a curve-shaped notch; not recommended)")
     c.add_argument("--all-tones", action="store_true", help="also remove stationary tones (hum etc.)")
@@ -71,6 +84,7 @@ def main(argv=None) -> int:
                    help="keep container metadata (default strips it, incl. GPS tags)")
     c.add_argument("--report", action="store_true", help="write <output>.json with detected tracks")
     c.add_argument("--plot", action="store_true", help="write a before/after spectrogram PNG")
+    c.add_argument("-q", "--quiet", action="store_true", help="no progress messages")
     c.set_defaults(func=cmd_clean)
 
     d = sub.add_parser("detect", help="list Doppler and stationary tones without modifying anything")

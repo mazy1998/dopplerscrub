@@ -8,3 +8,6 @@ data/synth/*.wav
 data/out/
 *.egg-info/
 dist/
+.cache/
+docs/img/
+docs/results/img/

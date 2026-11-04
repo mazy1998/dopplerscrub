@@ -93,11 +93,13 @@ def fnum(v, nd=1):
     return f"{v:.{nd}f}"
 
 
-def evaluate_clip(name, x, y, sr, true, det, window=None, wide=False, tag=""):
-    """Render + numbers for one clip (or one window of it)."""
+def evaluate_clip(name, x, y, sr, true, det, window=None, wide=False, tag="", fmax=None,
+                  boxes=None):
+    """Render + numbers for one clip (or one window of it). boxes: annotated events
+    (t0, t1, f0, f1) drawn on the overlay panel and scored with ev.box_stats."""
     doppler = [t for t in det if t.kind == "doppler"]
     ref_tracks = true if true else doppler
-    fmax = ev.FMAX_WIDE if wide else ev.FMAX
+    fmax = fmax or (ev.FMAX_WIDE if wide else ev.FMAX)
     stem = f"{name}{tag}"
     span = (window[0], window[1]) if window else None
     views = ev.attack_views(x, y, sr, fmax=fmax, span=span)
@@ -108,8 +110,9 @@ def evaluate_clip(name, x, y, sr, true, det, window=None, wide=False, tag=""):
     else:      # real: detected doppler cyan, other detections green
         overlay, lab = list(det), "cyan = detected doppler, green = other detections"
     ev.render_before_after(x, y, sr, IMG / f"{stem}_ba.png", tracks=overlay, overlay_label=lab,
+                           boxes=boxes,
                            window=win4, views=views, fmax=fmax,
-                           title=f"{stem}: attacker view before / after ({'40-1500' if wide else '40-450'} Hz)")
+                           title=f"{stem}: attacker view before / after (40-{fmax:.0f} Hz)")
     rt = ev.render_attacker_views(y, sr, IMG / f"{stem}_redteam.png", tracks=in_band(ref_tracks, fmax),
                                   window=win4, fmax=fmax, x_orig=x,
                                   title=f"{stem}: red-team views of the cleaned audio")
@@ -123,6 +126,14 @@ def evaluate_clip(name, x, y, sr, true, det, window=None, wide=False, tag=""):
         "contrast_clean_global_db": rt["contrast_db"].get("global"),
         "img_ba": f"img/{stem}_ba.png", "img_rt": f"img/{stem}_redteam.png",
     }
+    if boxes:
+        bs = [{"box": list(b), "orig": ev.box_stats(views["orig"], b), "clean": ev.box_stats(views["clean"], b)}
+              for b in boxes]
+        row["boxes"] = bs
+        row["box_p99_orig_db"] = float(np.nanmean([b["orig"]["p99_db"] for b in bs]))
+        row["box_p99_clean_db"] = float(np.nanmean([b["clean"]["p99_db"] for b in bs]))
+        row["box_hi_orig"] = float(np.nanmean([b["orig"]["frac_hi"] for b in bs]))
+        row["box_hi_clean"] = float(np.nanmean([b["clean"]["frac_hi"] for b in bs]))
     return row
 
 
@@ -133,21 +144,21 @@ def _crop(spec, window):
     return ev._crop_for_window(spec, window)
 
 
-def write_sheet(path, items, per_page=8):
+def write_sheet(path, items, per_page=6):
     """Original | cleaned attacker views of every clip, one row per clip, same colour scale."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     for p0 in range(0, len(items), per_page):
         chunk = items[p0:p0 + per_page]
-        fig, axs = plt.subplots(len(chunk), 2, figsize=(16, 2.3 * len(chunk)), constrained_layout=True,
+        fig, axs = plt.subplots(len(chunk), 2, figsize=(ev.FIG_W, 1.9 * len(chunk)), constrained_layout=True,
                                 squeeze=False)
         for (name, so, sc), (a, b) in zip(chunk, axs):
             ev._imshow(a, so, -3, 15, "magma"); a.set_title(f"{name}: original", fontsize=9, loc="left")
             im = ev._imshow(b, sc, -3, 15, "magma"); b.set_title(f"{name}: CLEANED", fontsize=9, loc="left")
         fig.colorbar(im, ax=axs, shrink=0.6, label="dB above per-bin median")
         out = path if p0 == 0 else path.with_name(f"{path.stem}_{p0 // per_page + 1}{path.suffix}")
-        fig.savefig(out, dpi=80)
+        ev.save_png(fig, out)
         plt.close(fig)
 
 
@@ -215,11 +226,65 @@ def real_clips(no_colsto=False):
     return out
 
 
+AIRSHOW_FMAX = 1950.0
+
+
+def airshow_clips():
+    p = ROOT / "data" / "real" / "airshow" / "annotations.json"
+    if not p.exists():
+        return []
+    out = []
+    for c in json.loads(p.read_text()).get("clips", []):
+        path = ROOT / c["path"]
+        if not path.exists():
+            continue
+        boxes = [(e["start_s"], e["end_s"], max(40.0, e["fmin_hz"]), min(AIRSHOW_FMAX, e["fmax_hz"]))
+                 for e in c.get("events", [])]
+        out.append({"name": f"air_{c['name']}", "path": path, "true": None, "wide": True,
+                    "set": "airshow", "boxes": boxes})
+    return out
+
+
+HELDOUT_DIR = ROOT / "data" / "real" / "heldout"
+
+
+def heldout_clips():
+    """Held-out real clips (never used for tuning). data/real/heldout/annotations.json in
+    the airshow format ({"clips": [{"name", "path", "events": [{start_s, end_s, fmin_hz,
+    fmax_hz}]}]}) if present, else every audio file there (no event boxes)."""
+    if not HELDOUT_DIR.exists():
+        return []
+    ann = HELDOUT_DIR / "annotations.json"
+    out, seen = [], set()
+    if ann.exists():
+        for c in json.loads(ann.read_text()).get("clips", []):
+            path = ROOT / c["path"] if not Path(c["path"]).is_absolute() else Path(c["path"])
+            if not path.exists():
+                continue
+            boxes = [(e["start_s"], e["end_s"], max(40.0, e["fmin_hz"]), min(AIRSHOW_FMAX, e["fmax_hz"]))
+                     for e in c.get("events", [])]
+            out.append({"name": f"ho_{c.get('name', path.stem)}", "path": path, "true": None,
+                        "wide": True, "set": "heldout", "boxes": boxes})
+            seen.add(path.resolve())
+    for p in sorted(HELDOUT_DIR.iterdir()):
+        if p.suffix.lower() in (".wav", ".flac", ".mp3", ".m4a", ".mp4", ".mov", ".mkv", ".webm") \
+                and p.resolve() not in seen:
+            out.append({"name": f"ho_{p.stem}", "path": p, "true": None, "wide": True,
+                        "set": "heldout", "boxes": []})
+    return out
+
+
+def clip_split(c) -> str:
+    """'dev' = everything used during development/tuning (synth, data/real, airshow, colsto);
+    'heldout' = data/real/heldout only."""
+    return "heldout" if c["set"] == "heldout" else "dev"
+
+
 # ------------------------------------------------------------------ markdown
 
-COLS = ["clip", "set", "detected (doppler/all)", "true", "matched", "residual dB",
+COLS = ["clip", "split", "set", "detected (doppler/all)", "true", "matched", "residual dB",
         "contrast orig→clean dB", "smoothed clean dB", "SNR outside dB", "speech SNR dB",
-        "AF z (orig→clean)", "AF ≤-10 dB?", "AF edge dB", "AF var dB / kurt", "AF leftover k·f",
+        "event-box p99 dB (orig→clean)", "AF z (orig→clean)", "AF ≤-10 dB?", "AF edge dB", "AF var dB / kurt", "AF leftover k·f",
         "runtime s", "visual verdict"]
 
 
@@ -229,7 +294,8 @@ def af_cells(af):
     lh = af.get("leftover_harmonics") or []
     lh_s = ", ".join(f"{k}×{f:.0f}" for f, k in lh[:6]) + ("…" if len(lh) > 6 else "") if lh else "none"
     return [f"{fnum(af['orig_z'])} → {fnum(af['resid_z'])}",
-            ("yes" if af["pass_target"] else "**no**") + f" ({fnum(af['resid_upper95_db'])})",
+            ("n/a (z<3 before)" if not (af["orig_z"] is not None and af["orig_z"] >= 3)
+             else ("yes" if af["pass_target"] else "**no**") + f" ({fnum(af['resid_upper95_db'])})"),
             fnum(af["edge_step_db"]), f"{fnum(af['var_ratio_db'])} / {fnum(af['kurt_corridor'])}", lh_s]
 
 
@@ -247,22 +313,28 @@ def write_md(rows, verdicts):
              "- **AF** (anti-forensics, docs/research.md; `evaluate.anti_forensics`): **z** = significance of "
              "on-curve power over the per-bin floor integrated over every frame of the pass (null = same "
              "statistic on curves shifted ±8–14 Hz; z>3 = an integrating attacker sees it); **≤-10 dB?** = "
-             "95% upper bound of that residual is ≥10 dB under the floor; **edge** = signed step across the "
+             "95% upper bound of that residual is ≥10 dB under the floor (n/a when the curve was not "
+             "detectable before cleaning: then the bound only reflects measurement precision); **edge** = signed step across the "
              "±2 Hz corridor edges vs control curves (<0 notch, >0 over-fill); **var/kurt** = corridor-bin "
              "power variance vs flank (dB) and corridor excess kurtosis (noise ≈ 6); **leftover k·f** = "
              "harmonics of the true/detected fundamental with z>3 after cleaning.",
+             "- **event-box p99**: 99th percentile of whitened dB inside the annotated event boxes "
+             "(airshow, colsto); pure noise ≈ 7 dB, so → ~7 means the ridges are gone.",
              "- **visual verdict**: written after viewing each PNG (see `verdicts.json`).", "",
+             *([f"_Verdict snapshot: {verdicts['_note']}_", ""] if "_note" in verdicts else []),
              "| " + " | ".join(COLS) + " |", "|" + "---|" * len(COLS)]
     for r in rows:
         v = verdicts.get(r["clip"], "(not yet reviewed)")
         lines.append("| " + " | ".join([
-            f"[{r['clip']}]({r['img_ba']}) ([rt]({r['img_rt']}))", r["set"],
+            f"[{r['clip']}]({r['img_ba']}) ([rt]({r['img_rt']}))", r.get("split", "dev"), r["set"],
             f"{r['n_doppler']}/{r['n_detected']}", fnum(r["n_true"], 0) if r["n_true"] is not None else "–",
             fnum(r["n_matched"], 0) if r["n_matched"] is not None else "–",
             fnum(r["residual_db"]),
             f"{fnum(r['contrast_orig_db'])} → {fnum(r['contrast_clean_db'])}",
             fnum(r["contrast_clean_smoothed_db"]), fnum(r["snr_outside_db"]),
-            fnum(r["speech_snr_db"]), *af_cells(r.get("af")), fnum(r["runtime_s"], 0), v]) + " |")
+            fnum(r["speech_snr_db"]),
+            (f"{fnum(r['box_p99_orig_db'])} → {fnum(r['box_p99_clean_db'])}" if "box_p99_orig_db" in r else "–"),
+            *af_cells(r.get("af")), fnum(r["runtime_s"], 0), v]) + " |")
     lines += ["", "## Images", ""]
     for r in rows:
         lines += [f"### {r['clip']}", "", f"![{r['clip']} before/after]({r['img_ba']})", "",
@@ -277,6 +349,9 @@ def main(argv=None):
     ap.add_argument("--only", nargs="*")
     ap.add_argument("--no-colsto", action="store_true")
     ap.add_argument("--no-real", action="store_true")
+    ap.add_argument("--no-airshow", action="store_true")
+    ap.add_argument("--split", choices=("dev", "heldout", "all"), default="dev",
+                    help="dev = all clips used for tuning (default); heldout = data/real/heldout")
     ap.add_argument("--md-only", action="store_true")
     ap.add_argument("--workdir", default=None, help="where cleaned WAVs go (default: temp dir)")
     a = ap.parse_args(argv)
@@ -286,11 +361,15 @@ def main(argv=None):
     vpath = RES / "verdicts.json"
     verdicts = json.loads(vpath.read_text()) if vpath.exists() else {}
     prev = {r["clip"]: r for r in json.loads(jpath.read_text())} if jpath.exists() else {}
+    for r in prev.values():   # rows from before the split existed were all dev/tuning clips
+        r.setdefault("split", "heldout" if r.get("set") == "heldout" else "dev")
     if a.md_only:
         write_md(list(prev.values()), verdicts)
         return
 
-    clips = synth_clips() + ([] if a.no_real else real_clips(a.no_colsto))
+    dev = (synth_clips() + ([] if a.no_real else real_clips(a.no_colsto))
+           + ([] if a.no_airshow else airshow_clips()))
+    clips = {"dev": dev, "heldout": heldout_clips(), "all": dev + heldout_clips()}[a.split]
     if a.only:
         clips = [c for c in clips if c["name"] in a.only]
     work = Path(a.workdir or tempfile.mkdtemp(prefix="dsbench_"))
@@ -309,23 +388,29 @@ def main(argv=None):
             failed[c["name"]] = f"{type(e).__name__}: {e}"
             continue
         n = min(len(x), len(y)); x, y = x[:n], y[:n]
-        base = {"set": c["set"], "runtime_s": rt_s, "how": how}
+        base = {"set": c["set"], "split": clip_split(c), "runtime_s": rt_s, "how": how}
         if c["name"] == "colsto":
             # numbers only inside the event windows (+-60 s); coarse full view + zooms
             doppler = [t for t in det if t.kind == "doppler"]
             m = metrics(x, y, sr, None, det)  # whole-file fidelity
-            r = evaluate_clip("colsto", x, y, sr, None, det, tag="_full")
+            cboxes = [(e["start_s"], e["end_s"], e.get("fmin_hz", 60), e.get("fmax_hz", 300))
+                      for e in c["events"]]
+            r = evaluate_clip("colsto", x, y, sr, None, det, tag="_full", boxes=cboxes)
             r.update(base, **m); rows[r["clip"]] = r
             for i, e in enumerate(c["events"], 1):
                 w = (e["start_s"] - 30, e["end_s"] + 30)
                 r = evaluate_clip("colsto", x, y, sr, None, det,
-                                  window=(w[0], w[1], 60, 300), tag=f"_ev{i}")
+                                  window=(w[0], w[1], 60, 300), tag=f"_ev{i}", boxes=[cboxes[i - 1]])
                 s0, s1 = int(w[0] * sr), int(w[1] * sr)
                 loc = [t for t in doppler if t.t1 > w[0] and t.t0 < w[1]]
                 mm = metrics(x[s0:s1], y[s0:s1], sr, None,
                              [Track(t.t - w[0], t.f, t.amp, kind=t.kind) for t in loc])
                 r.update(base, **mm); r["runtime_s"] = float("nan")
                 rows[r["clip"]] = r
+        elif c["set"] in ("airshow", "heldout"):
+            m = metrics(x, y, sr, None, det)
+            r = evaluate_clip(c["name"], x, y, sr, None, det, fmax=AIRSHOW_FMAX, boxes=c["boxes"] or None)
+            r.update(base, **m); rows[r["clip"]] = r
         else:
             m = metrics(x, y, sr, c["true"], det)
             r = evaluate_clip(c["name"], x, y, sr, c["true"], det, wide=False)
