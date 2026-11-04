@@ -83,3 +83,17 @@ def test_hard_specs_build():
     x2, _, _ = build_hard_clip(dict(specs[2], duration=10), sr=8000, seed=1)
     x3, _, _ = build_hard_clip(dict(specs[2], duration=10), sr=8000, seed=1)
     np.testing.assert_array_equal(x2, x3)
+
+
+def test_multipass_windows_and_pass_truth():
+    spec = next(s for s in hard_specs() if s['name'] == 'multipass_mixed')
+    spec = dict(spec, duration=200, events=[e for e in spec['events'] if e['window'][0] < 120])
+    x, tracks, meta = build_hard_clip(spec, sr=4000, seed=1)
+    ev = {p['event']: p for p in meta['passes']}
+    assert set(ev) == {0, 1} and ev[1]['kind'] == 'twin' and len(ev[1]['f0']) == 2
+    assert abs(ev[0]['d']-np.hypot(200, 290-1.5)) < 1e-6 and abs(ev[0]['v']-65) < 1e-6
+    assert abs(ev[0]['h']-(55+ev[0]['d']/C)) < 1e-9
+    assert {q.group//100 for q in tracks} == {0, 1}
+    for q in tracks:     # truth confined to the event window, faded at its edges
+        w = spec['events'][0 if q.group < 100 else 1]['window']
+        assert q.t[0] >= max(w[0], 0) and q.t[-1] <= w[1]

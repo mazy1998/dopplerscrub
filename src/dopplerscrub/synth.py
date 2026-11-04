@@ -532,15 +532,16 @@ def hard_specs():
     add('twin_props_a', 'twin', 90,
         'Twin-engine prop: two 3-blade families at 88 and 92.5 Hz (constant 4.5 Hz source offset), '
         'h1-6 each, shaft-rate sidebands (h*f0 +- f0/3) at -14 dB.',
-        dict(), [dict(traj=S(75, 45, 250, 300), f0=88., harmonics=6, sidebands=.2, blades=3, level_db=-44, group=0),
-                 dict(traj=S(75, 45, 250, 300), f0=92.5, harmonics=6, sidebands=.2, blades=3, level_db=-46, group=1)])
+        dict(), [dict(traj=S(75, 45, 250, 300), f0=88., harmonics=6, sidebands=.2, blades=3, level_db=-44, group=0, aircraft=0),
+                 dict(traj=S(75, 45, 250, 300), f0=92.5, harmonics=6, sidebands=.2, blades=3, level_db=-46, group=1,
+                      aircraft=0)])
     add('twin_props_b', 'twin', 75,
         'Twin turboprop, 4-blade families at 102 and 108 Hz (6 Hz offset), sidebands -12 dB, '
         'lower pass with a ground reflection (R=0.5).',
         dict(), [dict(traj=S(60, 38, 150, 200), f0=102., harmonics=6, sidebands=.25, blades=4, level_db=-46,
-                      group=0, ground=.5),
+                      group=0, ground=.5, aircraft=0),
                  dict(traj=S(60, 38, 150, 200), f0=108., harmonics=6, sidebands=.25, blades=4, level_db=-47,
-                      group=1, ground=.5)])
+                      group=1, ground=.5, aircraft=0)])
     # 3. dense prop fan
     add('dense_fan_a', 'dense_fan', 60,
         'Crop-duster-like close low pass (60 m slant): f0 95 Hz, 20 lumpy harmonics to 1.9 kHz source; '
@@ -610,6 +611,48 @@ def hard_specs():
         dict(generator=dict(level=.03, drift=.008)), [])
     add('null_ambience', 'null', 60, 'Outdoor ambience only (pink floor + light wind). No aircraft.',
         dict(wind=dict(level=.008)), [])
+    # 9. multi-pass recordings (what the geolocation attacker actually needs: >= 2 usable passes)
+    W = lambda tc, half=100: (tc-half, tc+half)
+    twin = lambda tc, v, lat, alt, f0, off, lvl, air, **kw: [
+        dict(traj=S(v, tc, lat, alt), f0=f0, harmonics=6, sidebands=.2, blades=3, level_db=lvl, group=0,
+             aircraft=air, window=W(tc), **kw),
+        dict(traj=S(v, tc, lat, alt), f0=f0+off, harmonics=6, sidebands=.2, blades=3, level_db=lvl-2, group=1,
+             aircraft=air, window=W(tc), **kw)]
+    add('multipass_mixed', 'multipass', 480,
+        'Five aircraft in 8 min: single prop (350 m), twin (600 m, 5 Hz offset), jet (400 m, roar + '
+        'ground comb) overlapped 20 s later by a second prop, close dense-fan prop (100 m), distant '
+        'prop (1.2 km).',
+        dict(wind=dict(level=.006)),
+        [dict(traj=S(65, 55, 200, 290), f0=110., harmonics=4, level_db=-50, aircraft=0, window=W(55)),
+         *twin(150, 75, 450, 400, 86., 5., -50, 1),
+         dict(traj=S(115, 235, 250, 315), jet_tones=[(1250., 1.), (1700., .6)], level_db=-50,
+              broadband=dict(level_db=-30, band=(60, 6000), aft=2.), ground=.8, mic_height=1.5,
+              drift=dict(std=.003, rate=.05), aircraft=2, window=W(235, 110)),
+         dict(traj=S(60, 255, 500, 500), f0=98., harmonics=3, level_db=-52, aircraft=3, window=W(255)),
+         dict(traj=S(70, 330, 60, 80), f0=92., harmonics=16, lumpy=dict(slope=.4, spread_db=5.),
+              level_db=-46, aircraft=4, window=W(330)),
+         dict(traj=S(75, 420, 1100, 500), f0=120., harmonics=3, level_db=-56, aircraft=5, window=W(420))])
+    add('multipass_speech', 'multipass', 420,
+        'Four aircraft under continuous two-talker speech for 7 min: prop (400 m), twin (500 m, 4 Hz '
+        'offset), jet (350 m), and a circling prop (orbit r 600 m).',
+        dict(speech=dict(level=.018, f0=115, talkers=2, pause=.05)),
+        [dict(traj=S(70, 60, 250, 310), f0=105., harmonics=4, level_db=-54, aircraft=0, window=W(60)),
+         *twin(160, 70, 350, 360, 90., 4., -54, 1),
+         dict(traj=S(120, 255, 200, 280), jet_tones=[(1150., 1.), (1600., .7)], level_db=-50,
+              broadband=dict(level_db=-29, band=(60, 6000), aft=2.), ground=.8, mic_height=1.5,
+              drift=dict(std=.003, rate=.05), aircraft=2, window=W(255, 110)),
+         dict(traj=dict(kind='turn', v=60., radius=600., t0=350., center=(0., 450.), alt=200.), f0=100.,
+              harmonics=4, level_db=-54, aircraft=3, window=(300, 420))])
+    add('multipass_faint', 'multipass', 600,
+        'Six passes in 10 min near the faint limit (attacker z ~3-10 each): distant props at 0.9-2.5 km, '
+        'one twin, two of them overlapping, under ambience and light traffic.',
+        dict(traffic=dict(level=.004)),
+        [dict(traj=S(70, 60, 1400, 600), f0=98., harmonics=3, level_db=-60, aircraft=0, window=W(60)),
+         dict(traj=S(80, 160, 2000, 900), f0=125., harmonics=2, level_db=-56, aircraft=1, window=W(160)),
+         *twin(260, 75, 1000, 700, 84., 5., -57, 2),
+         dict(traj=S(65, 350, 800, 500), f0=110., harmonics=3, level_db=-60, aircraft=3, window=W(350)),
+         dict(traj=S(85, 365, 1800, 800), f0=140., harmonics=2, level_db=-55, aircraft=4, window=W(365)),
+         dict(traj=S(70, 500, 2300, 1000), f0=105., harmonics=3, level_db=-53, aircraft=5, window=W(500))])
     return specs
 
 
@@ -653,26 +696,101 @@ def _event_components(ev, rng):
                            sb_group=group+50, **geo)
 
 
+def _shift_comps(comps, dt):
+    """Components re-expressed in a window's local emission time (te_local = te - dt)."""
+    out = []
+    for c in comps:
+        c = dict(c)
+        for k in ('f', 'jitter'):
+            if c.get(k):
+                c[k] = (lambda te, g=c[k]: g(np.asarray(te)+dt))
+        out.append(c)
+    return out
+
+
+def pass_truth(ev, mic_height=1.5, temp_c=15.):
+    """Geometry truth of one event: CPA emission time, slant distance d, speed v at CPA,
+    reception time h of the CPA (paper's h = t_cpa + d/c), and source fundamentals."""
+    traj = _trajectory(ev['traj'])
+    c = speed_of_sound(temp_c)
+    tr = ev['traj']
+    if tr['kind'] == 'straight':
+        te_cpa = float(tr['t_cpa'])
+    else:
+        te = np.arange(-300, 1200, .01)
+        r = np.linalg.norm(traj(te)-np.array([0, 0, mic_height]), axis=1)
+        te_cpa = float(te[np.argmin(r)])
+    p = traj(np.array([te_cpa-.01, te_cpa, te_cpa+.01]))
+    d = float(np.linalg.norm(p[1]-np.array([0, 0, mic_height])))
+    v = float(np.linalg.norm(p[2]-p[0])/.02)
+    if 'jet_tones' in ev:
+        f0 = [float(f) for f, _ in ev['jet_tones']]
+        kind = 'jet'
+    else:
+        f0 = [float(ev['f0'])]
+        kind = 'prop'
+    return dict(v=v, d=d, t_cpa_emission=te_cpa, h=te_cpa+d/c, f0=f0, kind=kind,
+                straight=tr['kind'] == 'straight', level_db=ev['level_db'])
+
+
 def build_hard_clip(spec, sr=48000, seed=0):
-    """Render one hard clip -> (audio float32, tracks, metadata)."""
+    """Render one hard clip -> (audio float32, tracks, metadata).
+
+    Each event is one engine family; events sharing an `aircraft` id (twins) form one pass.
+    Track groups are offset by 100 * aircraft (so group // 100 = aircraft/pass id; sidebands
+    sit at +50). An event `window` (t0, t1) renders the pass only there, with 4 s raised-cosine
+    fades (applied to the truth amplitudes too) — used by the long multi-pass clips.
+    """
     n = round(spec['duration']*sr)
     x = np.zeros(n)
     tracks = []
     rng = np.random.default_rng(seed)
+    passes = {}
     for j, ev in enumerate(spec['events']):
         comps = _event_components(ev, rng)
-        y, tr = render_pass(spec['duration'], sr, _trajectory(ev['traj']), comps,
+        air = ev.get('aircraft', j)
+        for c_ in comps:
+            c_['group'] = c_.get('group', 0)+100*air
+        traj = _trajectory(ev['traj'])
+        t0, t1 = ev.get('window', (0, spec['duration']))
+        t0, t1 = max(0., float(t0)), min(float(spec['duration']), float(t1))
+        if t1-t0 < 1:
+            continue
+        if t0 > 0 or t1 < spec['duration']:
+            comps = _shift_comps(comps, t0)
+            traj = (lambda te, g=traj, dt=t0: g(np.asarray(te, float)+dt))
+        y, tr = render_pass(t1-t0, sr, traj, comps,
                             level_db=ev['level_db'], ref_range=300., mic_height=ev.get('mic_height', 1.5),
                             ground=ev.get('ground', 0.), broadband=ev.get('broadband'),
                             seed=seed+100+j)
-        x += y; tracks += tr
+        if t0 > 0 or t1 < spec['duration']:
+            ramp = lambda tt: np.clip(np.minimum((tt-t0)/4 if t0 > 0 else 1, (t1-tt)/4 if t1 < spec['duration'] else 1), 0, 1)
+            fade = lambda tt: np.sin(np.pi/2*ramp(tt))**2
+            i0 = round(t0*sr); y = y[:n-i0]
+            x[i0:i0+len(y)] += y*fade(t0+np.arange(len(y))/sr)
+            for q in tr:
+                q.t = q.t+t0
+                q.amp = q.amp*fade(q.t)
+                keep = q.amp >= 10**(-90/20)
+                q.t, q.f, q.amp = q.t[keep], q.f[keep], q.amp[keep]
+            tr = [q for q in tr if len(q.t) >= 2]
+        else:
+            x += y
+        tracks += tr
+        pt = pass_truth(ev, ev.get('mic_height', 1.5))
+        if air in passes:     # twin: second engine of the same aircraft
+            passes[air]['f0'] += pt['f0']
+            passes[air]['kind'] = 'twin'
+            passes[air]['groups'] += sorted({q.group for q in tr})
+        else:
+            passes[air] = dict(event=air, **pt, groups=sorted({q.group for q in tr}))
     x += _bg(n, sr, seed+1000, **spec['bg'])
     peak = float(np.max(np.abs(x)))
     if peak > .98:
         raise ValueError(f"{spec['name']} clips (peak {peak:.2f}): lower levels")
     meta = dict(name=spec['name'], category=spec['category'], duration_s=spec['duration'], sr=sr,
                 seed=seed, null=not spec['events'], description=spec['description'],
-                events=spec['events'], background=spec['bg'], peak=peak)
+                passes=list(passes.values()), events=spec['events'], background=spec['bg'], peak=peak)
     return x.astype(np.float32), tracks, meta
 
 
