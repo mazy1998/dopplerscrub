@@ -38,6 +38,7 @@ import contextlib
 import dataclasses
 import hashlib
 import importlib
+import importlib.util
 import json
 import os
 import platform
@@ -224,7 +225,6 @@ def load_usable(args):
         return None
     mod, _, fn = name.rpartition(":") if name.count(":") else (name, "", "")
     if mod.endswith(".py"):                      # a file path: load it as a module
-        import importlib.util
         spec = importlib.util.spec_from_file_location("usable_hook", mod)
         module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
     else:
