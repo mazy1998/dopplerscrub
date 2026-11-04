@@ -24,6 +24,7 @@ class Track:
     harmonic: int = 1                   # 1 = fundamental, k = k-th harmonic of `group`
     group: int = -1                     # tracks from the same source share a group id
     kind: str = "unknown"               # "doppler" | "stationary" | "unknown"
+    width_hz: float | None = None       # measured tone half-width (Hz); None = RemoveConfig.width_hz
 
     @property
     def t0(self) -> float:
@@ -38,6 +39,7 @@ class Track:
             "t": self.t.tolist(), "f": self.f.tolist(), "amp": self.amp.tolist(),
             "doppler_score": self.doppler_score, "fit": self.fit,
             "harmonic": self.harmonic, "group": self.group, "kind": self.kind,
+            "width_hz": self.width_hz,
         }
 
     @classmethod
@@ -45,7 +47,7 @@ class Track:
         return cls(np.asarray(d["t"], float), np.asarray(d["f"], float),
                    np.asarray(d.get("amp", np.zeros(len(d["t"]))), float),
                    d.get("doppler_score", 0.0), d.get("fit"), d.get("harmonic", 1),
-                   d.get("group", -1), d.get("kind", "unknown"))
+                   d.get("group", -1), d.get("kind", "unknown"), d.get("width_hz"))
 
 
 @dataclass

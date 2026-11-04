@@ -121,7 +121,7 @@ def test_real_overlays():
                 ax.plot(tr.t,tr.f,color='cyan' if tr.kind=='doppler' else 'lime',lw=.7,alpha=.5 if tr.doppler_score==.7 else .8,ls='--' if tr.doppler_score==.7 else '-')
             ax.set(ylim=(30,hi),xlabel='Time (s)',ylabel='Hz',title=f'30–{hi} Hz; cyan=moving (dashed=verified prediction), green=stationary')
         fig.suptitle(path.stem+' — non-parametric ridge overlays')
-        target=root/'docs/img'/f'ridges_{path.stem}.png';fig.savefig(target,dpi=110);plt.close(fig)
+        target=root/'docs/img'/f'ridges_{path.stem}.png';target.parent.mkdir(parents=True,exist_ok=True);fig.savefig(target,dpi=110);plt.close(fig)
         results.append(dict(calibration=S.calibration,path=str(path.relative_to(root)),moving=sum(tr.kind=='doppler' for tr in tracks),stationary=sum(tr.kind=='stationary' for tr in tracks),tracks=[tr.to_dict() for tr in tracks]))
         print(path.stem,results[-1]['moving'],flush=True)
     (root/'data/real/ridge_results.json').write_text(json.dumps(results,indent=2)+'\n')
