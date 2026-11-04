@@ -1,0 +1,382 @@
+{
+ "method": "blind: metadata + broadband loudness envelope only; no spectrograms, listening, or dopplerscrub runs",
+ "clips": [
+  {
+   "name": "c150_lowpass",
+   "url": "https://www.youtube.com/watch?v=ncgTszJDc4I",
+   "title": "Low Pass C150M @SCCV",
+   "uploader": "Alejandro Gorigoitia",
+   "source_type": "prop: light piston single (Cessna 150) runway low pass",
+   "source_start_s": 0,
+   "source_end_s": 82.8,
+   "path": "data/real/heldout2/c150_lowpass.wav",
+   "sr": 48000,
+   "channels": 2,
+   "duration_s": 82.8,
+   "sha256": "c897d844f1f5d378df794e8ddffbe5990b9a0ed2bac1d7c11a6bffd9d630c0f1",
+   "status": "blind: never viewed, listened to, or processed",
+   "loudness_peak_source_s": 79.7,
+   "events": [
+    {
+     "start_s": 0,
+     "end_s": 82.8,
+     "fmin_hz": 40,
+     "fmax_hz": 2000,
+     "source_type": "prop: light piston single (Cessna 150) runway low pass",
+     "clean_sweep": null,
+     "notes": "loudness-envelope window; not spectrogram-verified"
+    }
+   ]
+  },
+  {
+   "name": "cub_lowpass",
+   "url": "https://www.youtube.com/watch?v=BBz6tzSoCnI",
+   "title": "AVX RUNWAY PROJECT- JERRY’S CUB LOW PASS",
+   "uploader": "Jerry Rootlieb",
+   "source_type": "prop: Piper Cub low pass at a private strip",
+   "source_start_s": 0,
+   "source_end_s": 70.7,
+   "path": "data/real/heldout2/cub_lowpass.wav",
+   "sr": 48000,
+   "channels": 2,
+   "duration_s": 70.682,
+   "sha256": "dfc8501d9726f12972fcff213dc28f4ce73882ee7d1cc1c44b9a5baed1ae49ff",
+   "status": "blind: never viewed, listened to, or processed",
+   "loudness_peak_source_s": 13.4,
+   "events": [
+    {
+     "start_s": 0,
+     "end_s": 70.7,
+     "fmin_hz": 40,
+     "fmax_hz": 2000,
+     "source_type": "prop: Piper Cub low pass at a private strip",
+     "clean_sweep": null,
+     "notes": "loudness-envelope window; not spectrogram-verified"
+    }
+   ]
+  },
+  {
+   "name": "kingair_b350",
+   "url": "https://www.youtube.com/watch?v=BzUlY8YzarI",
+   "title": "[4K] Raytheon/Beechcraft B350 King Air Flyby",
+   "uploader": "HD Aviation Films",
+   "source_type": "prop: twin turboprop (King Air B350) flyby",
+   "source_start_s": 0,
+   "source_end_s": 21.5,
+   "path": "data/real/heldout2/kingair_b350.wav",
+   "sr": 48000,
+   "channels": 2,
+   "duration_s": 21.5,
+   "sha256": "a5eda37879611ebec3ffbeb0087012d26b7dab2c8b8d52569ed4b69b3b93307b",
+   "status": "blind: never viewed, listened to, or processed",
+   "loudness_peak_source_s": 13.2,
+   "events": [
+    {
+     "start_s": 0,
+     "end_s": 17.5,
+     "fmin_hz": 40,
+     "fmax_hz": 2000,
+     "source_type": "prop: twin turboprop (King Air B350) flyby",
+     "clean_sweep": null,
+     "notes": "loudness-envelope window; not spectrogram-verified"
+    }
+   ]
+  },
+  {
+   "name": "pc12_lowpass",
+   "url": "https://www.youtube.com/watch?v=x1-21YrfPHA",
+   "title": "Pilatus PC-12 NG SP-THC LOW PASS RUNWAY 29 EPKR",
+   "uploader": "Pavlo EPKR",
+   "source_type": "prop: single turboprop (Pilatus PC-12) runway low pass",
+   "source_start_s": 3.0,
+   "source_end_s": 24.5,
+   "path": "data/real/heldout2/pc12_lowpass.wav",
+   "sr": 48000,
+   "channels": 2,
+   "duration_s": 21.462,
+   "sha256": "c703646cc015e19d2516e28cf499e73c6da041e5ca3410b964c01f589baedb99",
+   "status": "blind: never viewed, listened to, or processed",
+   "loudness_peak_source_s": 18.4,
+   "events": [
+    {
+     "start_s": 11.2,
+     "end_s": 19.2,
+     "fmin_hz": 40,
+     "fmax_hz": 2000,
+     "source_type": "prop: single turboprop (Pilatus PC-12) runway low pass",
+     "clean_sweep": null,
+     "notes": "loudness-envelope window; not spectrogram-verified"
+    }
+   ]
+  },
+  {
+   "name": "baron_flyby",
+   "url": "https://www.youtube.com/watch?v=2XEm7aMBfGc",
+   "title": "Colemill Beechcraft Baron B55 flyby",
+   "uploader": "Warren Daniel",
+   "source_type": "prop: twin piston (Beechcraft Baron B55) flyby",
+   "source_start_s": 0,
+   "source_end_s": 31.3,
+   "path": "data/real/heldout2/baron_flyby.wav",
+   "sr": 48000,
+   "channels": 2,
+   "duration_s": 31.277,
+   "sha256": "bd375b3b962c89afca2b8f79685e561d578fb906eb9ebb42d3885d1b2dc93ca7",
+   "status": "blind: never viewed, listened to, or processed",
+   "loudness_peak_source_s": 20.7,
+   "events": [
+    {
+     "start_s": 12.9,
+     "end_s": 28.5,
+     "fmin_hz": 40,
+     "fmax_hz": 2000,
+     "source_type": "prop: twin piston (Beechcraft Baron B55) flyby",
+     "clean_sweep": null,
+     "notes": "loudness-envelope window; not spectrogram-verified"
+    }
+   ]
+  },
+  {
+   "name": "c172_takeoff_talking",
+   "url": "https://www.youtube.com/watch?v=Ixo3n4ZHqc8",
+   "title": "Cessna 172M Skyhawk Take-Off at Doylestown Airport (DYL)",
+   "uploader": "The Philly Buff",
+   "source_type": "prop: Cessna 172 departure, people talking near the camera (per description)",
+   "source_start_s": 1.2,
+   "source_end_s": 58.4,
+   "path": "data/real/heldout2/c172_takeoff_talking.wav",
+   "sr": 48000,
+   "channels": 2,
+   "duration_s": 57.175,
+   "sha256": "99553a3c191d2ea6360eab699938fe2948e72b413232e8735e40e93ae8e2d691",
+   "status": "blind: never viewed, listened to, or processed",
+   "loudness_peak_source_s": 23.9,
+   "events": [
+    {
+     "start_s": 14.5,
+     "end_s": 35.3,
+     "fmin_hz": 40,
+     "fmax_hz": 2000,
+     "source_type": "prop: Cessna 172 departure, people talking near the camera (per description)",
+     "clean_sweep": null,
+     "notes": "loudness-envelope window; not spectrogram-verified"
+    }
+   ]
+  },
+  {
+   "name": "a320_overhead",
+   "url": "https://www.youtube.com/watch?v=Uwl8Yd6TN6g",
+   "title": "easyJet A320 low pass overhead | Manchester Airport | Plane Hunter UK",
+   "uploader": "Plane Hunter UK",
+   "source_type": "jet: airliner (A320) low overhead on approach",
+   "source_start_s": 0,
+   "source_end_s": 49.5,
+   "path": "data/real/heldout2/a320_overhead.wav",
+   "sr": 48000,
+   "channels": 2,
+   "duration_s": 49.451,
+   "sha256": "c5a6c32a16bda110a6a86cfae47216864e381f3a292528074b55d50b408a0198",
+   "status": "blind: never viewed, listened to, or processed",
+   "loudness_peak_source_s": 7.0,
+   "events": [
+    {
+     "start_s": 0,
+     "end_s": 9.9,
+     "fmin_hz": 40,
+     "fmax_hz": 2000,
+     "source_type": "jet: airliner (A320) low overhead on approach",
+     "clean_sweep": null,
+     "notes": "loudness-envelope window; not spectrogram-verified"
+    }
+   ]
+  },
+  {
+   "name": "b737_overhead",
+   "url": "https://www.youtube.com/watch?v=Pn_YfiEWygw",
+   "title": "[4K] Spectacular Boeing 737 Overhead Approach to Corfu Airport | Ryanair EI-DWY | 14.08.2015",
+   "uploader": "efbeVideo",
+   "source_type": "jet: airliner (737-800) overhead approach",
+   "source_start_s": 8.8,
+   "source_end_s": 76.3,
+   "path": "data/real/heldout2/b737_overhead.wav",
+   "sr": 48000,
+   "channels": 2,
+   "duration_s": 67.5,
+   "sha256": "0558159397530facc5e6b2227cb0dfe775379422b35f68f538f8cd7e34154d1d",
+   "status": "blind: never viewed, listened to, or processed",
+   "loudness_peak_source_s": 29.2,
+   "events": [
+    {
+     "start_s": 13.7,
+     "end_s": 26.5,
+     "fmin_hz": 40,
+     "fmax_hz": 2000,
+     "source_type": "jet: airliner (737-800) overhead approach",
+     "clean_sweep": null,
+     "notes": "loudness-envelope window; not spectrogram-verified"
+    }
+   ]
+  },
+  {
+   "name": "citation_lowpass",
+   "url": "https://www.youtube.com/watch?v=l0trQ8gRJpE",
+   "title": "Cessna Citation Jet Does a Low Pass!",
+   "uploader": "FarmersRC Channel",
+   "source_type": "jet: business jet (Cessna Citation) low pass",
+   "source_start_s": 0,
+   "source_end_s": 74.1,
+   "path": "data/real/heldout2/citation_lowpass.wav",
+   "sr": 48000,
+   "channels": 2,
+   "duration_s": 74.1,
+   "sha256": "0727317069c052b26bb0f681a7a80b6e4e28eb3c60daee206b98721a45230a20",
+   "status": "blind: never viewed, listened to, or processed",
+   "loudness_peak_source_s": 56.7,
+   "events": [
+    {
+     "start_s": 49.1,
+     "end_s": 67.9,
+     "fmin_hz": 40,
+     "fmax_hz": 2000,
+     "source_type": "jet: business jet (Cessna Citation) low pass",
+     "clean_sweep": null,
+     "notes": "loudness-envelope window; not spectrogram-verified"
+    }
+   ]
+  },
+  {
+   "name": "alphajet_flyby",
+   "url": "https://www.youtube.com/watch?v=byLplPe-_2k",
+   "title": "Belgian Alphajets - Very Low Flyby",
+   "uploader": "Frederic",
+   "source_type": "jet: military trainers (3x Alpha Jet) very low flyby",
+   "source_start_s": 0,
+   "source_end_s": 39.3,
+   "path": "data/real/heldout2/alphajet_flyby.wav",
+   "sr": 48000,
+   "channels": 2,
+   "duration_s": 39.288,
+   "sha256": "272e2155b1f53acad2934e0204138d5c8f0f5c71934e29ac67491beb15a00408",
+   "status": "blind: never viewed, listened to, or processed",
+   "loudness_peak_source_s": 25.7,
+   "events": [
+    {
+     "start_s": 10.9,
+     "end_s": 34.5,
+     "fmin_hz": 40,
+     "fmax_hz": 2000,
+     "source_type": "jet: military trainers (3x Alpha Jet) very low flyby",
+     "clean_sweep": null,
+     "notes": "loudness-envelope window; not spectrogram-verified"
+    }
+   ]
+  },
+  {
+   "name": "harrier_lowpass",
+   "url": "https://www.youtube.com/watch?v=WRfDsSnLtE4",
+   "title": "VERY low Harrier (\"I won't flinch..\")",
+   "uploader": "Dimpyz",
+   "source_type": "jet: military (Harrier) low pass, speech before the pass (per description)",
+   "source_start_s": 0,
+   "source_end_s": 25.1,
+   "path": "data/real/heldout2/harrier_lowpass.wav",
+   "sr": 48000,
+   "channels": 2,
+   "duration_s": 25.089,
+   "sha256": "3fbbe9d63712c7622c5541e719e465960e369055b263bb05232dcfca7f80b2fc",
+   "status": "blind: never viewed, listened to, or processed",
+   "loudness_peak_source_s": 20.1,
+   "events": [
+    {
+     "start_s": 15.2,
+     "end_s": 23.2,
+     "fmin_hz": 40,
+     "fmax_hz": 2000,
+     "source_type": "jet: military (Harrier) low pass, speech before the pass (per description)",
+     "clean_sweep": null,
+     "notes": "loudness-envelope window; not spectrogram-verified"
+    }
+   ]
+  }
+ ],
+ "rejected": [
+  {
+   "name": "r44_flyby",
+   "url": "https://www.youtube.com/watch?v=2kNkgbfep58",
+   "title": "Robison R44 Raven II Helicopter Fly By",
+   "source_type": "light piston helicopter (Robinson R44) flyby",
+   "source_start_s": 0,
+   "source_end_s": 40.6,
+   "sr": 48000,
+   "duration_s": 40.589,
+   "sha256": "d84bb251292317ad5f25205d43262fe9c58be35ea2d6f9064ca1f6522525a28d",
+   "path": "data/real/heldout2_excluded/r44_flyby.wav",
+   "reason": "out of scope: not a fixed-wing airplane (scope narrowed 2026-11-04, before any results)"
+  },
+  {
+   "name": "bell407_house",
+   "url": "https://www.youtube.com/watch?v=7ebJM2kKpjA",
+   "title": "Low flying Bell 407 (N765MT) over my house",
+   "source_type": "turbine helicopter (Bell 407) low over a house",
+   "source_start_s": 0,
+   "source_end_s": 30.6,
+   "sr": 48000,
+   "duration_s": 30.6,
+   "sha256": "bd39715e13c2bdd7c8aa4bf16d700342005f83665e87c1cf67e307b136f5652c",
+   "path": "data/real/heldout2_excluded/bell407_house.wav",
+   "reason": "out of scope: not a fixed-wing airplane (scope narrowed 2026-11-04, before any results)"
+  },
+  {
+   "name": "train_horn",
+   "url": "https://www.youtube.com/watch?v=3dzV8QCWJnk",
+   "title": "BNSF 7102 P5 Train Horn At 70 MPH (Amazing Doppler Effect)",
+   "source_type": "locomotive horn at 70 mph (tonal, non-engine)",
+   "source_start_s": 0,
+   "source_end_s": 25.1,
+   "sr": 48000,
+   "duration_s": 25.1,
+   "sha256": "5ea5e9bb621f2a9cb32568007d1ba9fd63455cdbe1ea353e757814b49a660535",
+   "path": "data/real/heldout2_excluded/train_horn.wav",
+   "reason": "out of scope: not a fixed-wing airplane (scope narrowed 2026-11-04, before any results)"
+  },
+  {
+   "name": "fire_siren",
+   "url": "https://www.youtube.com/watch?v=imoxDcn2Sgo",
+   "title": "Fire Engine Siren Demonstrates The Doppler Effect",
+   "source_type": "fire engine siren pass at speed (road vehicle, tonal siren)",
+   "source_start_s": 0,
+   "source_end_s": 18.7,
+   "sr": 48000,
+   "duration_s": 18.7,
+   "sha256": "350a66d8e1e6c219be87c1dab6742fcfc714cf3aac7e43098cc8da7f4933e44f",
+   "path": "data/real/heldout2_excluded/fire_siren.wav",
+   "reason": "out of scope: not a fixed-wing airplane (scope narrowed 2026-11-04, before any results)"
+  },
+  {
+   "name": "tt_motorcycle",
+   "url": "https://www.youtube.com/watch?v=_hf__rO7MD8",
+   "title": "Isle of Man TT - original first time spectator reaction",
+   "source_type": "road-race motorcycle pass with spectator reaction (speech likely, unverified)",
+   "source_start_s": 0,
+   "source_end_s": 15.0,
+   "sr": 48000,
+   "duration_s": 15.0,
+   "sha256": "30ba014c6d888e9d135ca29a5c70b813ccbf7aabebf780198df7565557c57784",
+   "path": "data/real/heldout2_excluded/tt_motorcycle.wav",
+   "reason": "out of scope: not a fixed-wing airplane (scope narrowed 2026-11-04, before any results)"
+  },
+  {
+   "name": "rally_car",
+   "url": "https://www.youtube.com/watch?v=JqwYExVlXek",
+   "title": "Rally monte Carlo 2022.  Sebastian Loeb flat out",
+   "source_type": "rally car flat-out pass (road vehicle)",
+   "source_start_s": 0.5,
+   "source_end_s": 23.7,
+   "sr": 48000,
+   "duration_s": 23.196,
+   "sha256": "40b304f02f6455c1d5113e39a7d6885898341c2f4373ff9e983e2bfb617ca381",
+   "path": "data/real/heldout2_excluded/rally_car.wav",
+   "reason": "out of scope: not a fixed-wing airplane (scope narrowed 2026-11-04, before any results)"
+  }
+ ]
+}

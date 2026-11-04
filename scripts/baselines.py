@@ -15,7 +15,8 @@ after viewing the PNGs; --md-only re-renders the markdown from the JSON.
 Usage:
   uv run python scripts/baselines.py                       # synth + 2 real dev clips
   uv run python scripts/baselines.py --only speech prop_pass --methods bandstop jitter
-  uv run python scripts/baselines.py --split heldout       # data/real/heldout (later)
+  uv run python scripts/baselines.py --split heldout       # data/real/heldout (burned)
+  uv run python scripts/baselines.py --split heldout2 --blind  # fresh blind set; no numbers on stdout
   uv run python scripts/baselines.py --md-only
 """
 from __future__ import annotations
@@ -75,10 +76,10 @@ def dev_clips():
     return [c for c in out if Path(c["path"]).exists()]
 
 
-def heldout():
+def heldout(which: str = "heldout"):
     import benchmark as bm
-    return [{"name": c["name"], "path": c["path"], "split": "heldout", "set": "heldout", "true": None,
-             "boxes": c["boxes"]} for c in bm.heldout_clips()]
+    return [{"name": c["name"], "path": c["path"], "split": which, "set": which, "true": None,
+             "boxes": c["boxes"]} for c in bm.heldout_clips(which)]
 
 
 # ------------------------------------------------------------------ run methods
@@ -143,7 +144,8 @@ def metrics(x, y, sr, clip, v_clean, v_orig):
     if not true:
         b = bf.boxfree(x, y, sr)
         m.update({"bf_z3_orig": b["n_ridges_orig_z3"], "bf_still_z3": b["n_still_z3"],
-                  "bf_new_z3": b["n_new_z3"], "bf_persist_orig": b["persist_orig"],
+                  "bf_new_z3": b["n_new_z3"], "bf_new_created_z3": b["n_new_created_z3"],
+                  "bf_persist_orig": b["persist_orig"],
                   "bf_persist": b["persist_clean"], "bf_z_clean_med": b["z_clean_med"]})
     m["speech_snr_db"] = fid["speech_snr_db"]
     m["lsd_db"] = ev.log_spectral_distance(x, y, sr)
@@ -204,8 +206,10 @@ def is_visible(r):
 
 
 def summary_table(rows, split):
-    """Method x metric medians for one split, over clips with a curve visible before."""
-    rows = [r for r in rows if r["split"] == split]
+    """Method x metric medians for one split, over in-scope (fixed-wing) clips with a curve
+    visible before. Out-of-scope clips keep their per-clip sections but are not counted."""
+    import benchmark as bm
+    rows = [r for r in rows if r["split"] == split and bm.in_scope(r["clip"])]
     visible = {r["clip"] for r in rows if r["method"] == "dopplerscrub" and is_visible(r)}
     if not rows:
         return [f"_No {split} rows._", ""], visible
@@ -229,7 +233,9 @@ def summary_table(rows, split):
             fnum(med([r["contrast_db"] for r in syn])), fnum(med([r["ridge_excess_db"] for r in syn])),
             fnum(100 * med([r["box_hi"] for r in real])),
             (f"{sum(r['bf_still_z3'] for r in bfr)} / {sum(r['bf_z3_orig'] for r in bfr)}; "
-             f"{sum(r['bf_new_z3'] for r in bfr)}") if bfr else "–",
+             f"{sum(r['bf_new_z3'] for r in bfr)}"
+             + (f" ({sum(r['bf_new_created_z3'] for r in bfr)} created)"
+                if all("bf_new_created_z3" in r for r in bfr) else "")) if bfr else "–",
             fnum(100 * med([r["bf_persist"] for r in bfr])),
             fnum(med([r["snr_outside_db"] for r in vis])), fnum(med([r["speech_snr_db"] for r in vis])),
             fnum(med([r["lsd_db"] for r in vis]), 2), fnum(med([r["lsd_above450_db"] for r in vis]), 2),
@@ -242,6 +248,7 @@ def summary_table(rows, split):
 
 
 def write_md(rows, verdicts):
+    import benchmark as bm
     by_m = {m: [r for r in rows if r["method"] == m] for m in METHODS}
     when = max((r.get("time", "") for r in rows), default="?")
     L = ["# Targeted removal vs blanket baselines", "",
@@ -253,6 +260,8 @@ def write_md(rows, verdicts):
          "only removal, masking or the output noise floor can hide a tone.", "",
          "† Runtimes were measured on a shared CPU while other jobs (benchmark runs, other agents) "
          "were running; treat them as rough upper bounds, not as a performance measurement.", "",
+         "**Scope:** fixed-wing airplanes (propeller and jet). Medians below cover in-scope clips "
+         "only; rotorcraft, drone and road-vehicle clips keep their per-clip sections, marked OUT OF SCOPE.", "",
          "**Claim under test:** targeted removal hides the Doppler curves as well as blanket "
          "methods while damaging far less audio.", ""]
     if "_summary" in verdicts:
@@ -270,6 +279,14 @@ def write_md(rows, verdicts):
     T, vis_h = summary_table(rows, "heldout")
     L += T
     visible = visible | vis_h
+    if any(r["split"] == "heldout2" for r in rows):
+        L += ["## Method × metric (medians), held-out 2 (fresh blind set)", "",
+              "data/real/heldout2: collected after the first held-out set was burned; clips and event "
+              "boxes chosen from metadata and a broadband loudness envelope only (see its SOURCES.md). "
+              "Same caveats as held-out.", ""]
+        T, vis_h2 = summary_table(rows, "heldout2")
+        L += T
+        visible = visible | vis_h2
     L += ["", "Reference (no processing): exact contrast and ridge excess of the ORIGINAL, median over "
           f"visible synthetic clips: {fnum(med([r.get('contrast_orig_db') for r in by_m['bandstop'] if r['clip'] in visible and 'contrast_orig_db' in r]))} dB / "
           f"{fnum(med([r.get('ridge_excess_orig_db') for r in by_m['bandstop'] if r['clip'] in visible]))} dB; "
@@ -288,8 +305,9 @@ def write_md(rows, verdicts):
           "- **box-free ridges** (real clips, no truth needed; `scripts/boxfree.py`): an independent "
           "attacker-side ridge extractor (2 s smoothed view > 4 dB, ≥ 6 s, sweeping ≥ 3 Hz) on the "
           "ORIGINAL; counted are ridges with integrated z > 3 before, those still z > 3 after, and "
-          "z > 3 ridges that appear only after processing (new: mostly leftover harmonics that were part "
-          "of a larger bright component in the original; still + new = z > 3 ridges left). White noise gives 0 ridges. "
+          "z > 3 ridges that appear only after processing (new; in brackets the ones **created** by the processing, the rest being original content "
+          "that was already z>3 or sat inside the original's bright mask: docs/results/new_ridges.md; "
+          "still + new = z > 3 ridges left). White noise gives 0 ridges. "
           "**persistent cells**: share of smoothed cells > 4 dB (white noise 4.6%).",
           "- **event-box ridge cells** (real clips, no true tracks): share of attacker-view cells above "
           "+8 dB inside the annotated event box. Pure noise is about 0.5%.",
@@ -314,7 +332,7 @@ def write_md(rows, verdicts):
             clips.append(r["clip"])
     for c in clips:
         cr = [r for r in rows if r["clip"] == c]
-        L += [f"### {c} ({cr[0]['set']}, {cr[0]['split']}{', curve visible before' if c in visible else ', curve NOT visible before'})",
+        L += [f"### {c} ({cr[0]['set']}, {cr[0]['split']}{'' if bm.in_scope(c) else ', OUT OF SCOPE (not fixed-wing)'}{', curve visible before' if c in visible else ', curve NOT visible before'})",
               "", f"![{c}](img/bl_{c}.png)", "",
               "| method | AF z | ≤-10 dB | contrast | ridge excess | box ridge % | box-free still/before (new) | SNR out | speech SNR | LSD | STOI-like | TF mod all / 40–450 | visual verdict |",
               "|" + "---|" * 13]
@@ -339,7 +357,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", nargs="*")
     ap.add_argument("--methods", nargs="*", default=METHODS)
-    ap.add_argument("--split", choices=("dev", "heldout"), default="dev")
+    ap.add_argument("--split", choices=("dev", "heldout", "heldout2"), default="dev")
+    ap.add_argument("--blind", action="store_true", help="print no numbers (judge images first)")
     ap.add_argument("--force", action="store_true", help="recompute cached method outputs")
     ap.add_argument("--md-only", action="store_true")
     a = ap.parse_args(argv)
@@ -351,7 +370,7 @@ def main(argv=None):
     if a.md_only:
         write_md(rows, verdicts)
         return
-    clips = dev_clips() if a.split == "dev" else heldout()
+    clips = dev_clips() if a.split == "dev" else heldout(a.split)
     if a.only:
         clips = [c for c in clips if c["name"] in a.only]
     for c in clips:
@@ -375,9 +394,9 @@ def main(argv=None):
                 tb = [t for t in c["true"] if np.nanmedian(t.f) <= ev.FMAX and np.nanmax(t.f) >= ev.FMIN]
                 r["contrast_orig_db"] = ev.track_contrast_db(v_orig, tb)
             new.append(r)
-            print(f"   {m:12s} {rt:6.1f}s  " + "  ".join(
+            print(f"   {m:12s} {rt:6.1f}s  " + ("" if a.blind else "  ".join(
                 f"{k}={fnum(r.get(k), 2)}" for k in ("af_z", "ridge_excess_db", "box_hi", "snr_outside_db",
-                                                     "lsd_db", "stoi_like", "tf_mod_all")), flush=True)
+                                                     "lsd_db", "stoi_like", "tf_mod_all"))), flush=True)
         render(c, views, IMG / f"bl_{c['name']}.png")
         rows = [r for r in rows if not (r["clip"] == c["name"] and r["method"] in {n["method"] for n in new})] + new
         jpath.write_text(json.dumps(rows, indent=1, default=float))

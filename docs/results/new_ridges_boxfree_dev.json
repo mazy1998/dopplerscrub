@@ -1,0 +1,490 @@
+{
+ "dopplerscrub": [
+  {
+   "n_ridges_orig_z3": 13,
+   "n_still_z3": 3,
+   "n_new_z3": 11,
+   "n_new_created_z3": 0,
+   "n_new_unmasked_z3": 4,
+   "n_new_seen_z3": 7,
+   "n_stronger": 2,
+   "clip": "prop_pass"
+  },
+  {
+   "n_ridges_orig_z3": 4,
+   "n_still_z3": 0,
+   "n_new_z3": 3,
+   "n_new_created_z3": 0,
+   "n_new_unmasked_z3": 0,
+   "n_new_seen_z3": 3,
+   "n_stronger": 0,
+   "clip": "prop_flyover"
+  },
+  {
+   "n_ridges_orig_z3": 36,
+   "n_still_z3": 27,
+   "n_new_z3": 6,
+   "n_new_created_z3": 0,
+   "n_new_unmasked_z3": 4,
+   "n_new_seen_z3": 2,
+   "n_stronger": 1,
+   "clip": "colsto_2050_2250"
+  },
+  {
+   "n_ridges_orig_z3": 24,
+   "n_still_z3": 14,
+   "n_new_z3": 2,
+   "n_new_created_z3": 0,
+   "n_new_unmasked_z3": 2,
+   "n_new_seen_z3": 0,
+   "n_stronger": 0,
+   "clip": "colsto_2980_3170"
+  },
+  {
+   "n_ridges_orig_z3": 41,
+   "n_still_z3": 21,
+   "n_new_z3": 18,
+   "n_new_created_z3": 0,
+   "n_new_unmasked_z3": 5,
+   "n_new_seen_z3": 13,
+   "n_stronger": 0,
+   "clip": "air_p51_mustang"
+  },
+  {
+   "n_ridges_orig_z3": 13,
+   "n_still_z3": 6,
+   "n_new_z3": 3,
+   "n_new_created_z3": 0,
+   "n_new_unmasked_z3": 0,
+   "n_new_seen_z3": 3,
+   "n_stronger": 0,
+   "clip": "air_spitfire_presenter"
+  },
+  {
+   "n_ridges_orig_z3": 7,
+   "n_still_z3": 5,
+   "n_new_z3": 5,
+   "n_new_created_z3": 0,
+   "n_new_unmasked_z3": 2,
+   "n_new_seen_z3": 3,
+   "n_stronger": 0,
+   "clip": "air_spitfire_mustang"
+  },
+  {
+   "n_ridges_orig_z3": 4,
+   "n_still_z3": 4,
+   "n_new_z3": 0,
+   "n_new_created_z3": 0,
+   "n_new_unmasked_z3": 0,
+   "n_new_seen_z3": 0,
+   "n_stronger": 0,
+   "clip": "air_star_wars_canyon"
+  },
+  {
+   "n_ridges_orig_z3": 7,
+   "n_still_z3": 7,
+   "n_new_z3": 0,
+   "n_new_created_z3": 0,
+   "n_new_unmasked_z3": 0,
+   "n_new_seen_z3": 0,
+   "n_stronger": 0,
+   "clip": "air_rainbow_f18"
+  },
+  {
+   "n_ridges_orig_z3": 26,
+   "n_still_z3": 17,
+   "n_new_z3": 3,
+   "n_new_created_z3": 0,
+   "n_new_unmasked_z3": 3,
+   "n_new_seen_z3": 0,
+   "n_stronger": 0,
+   "clip": "air_hercules_airshow"
+  },
+  {
+   "n_ridges_orig_z3": 27,
+   "n_still_z3": 13,
+   "n_new_z3": 10,
+   "n_new_created_z3": 0,
+   "n_new_unmasked_z3": 7,
+   "n_new_seen_z3": 3,
+   "n_stronger": 0,
+   "clip": "air_extra300"
+  },
+  {
+   "n_ridges_orig_z3": 0,
+   "n_still_z3": 0,
+   "n_new_z3": 0,
+   "n_new_created_z3": 0,
+   "n_new_unmasked_z3": 0,
+   "n_new_seen_z3": 0,
+   "n_stronger": 0,
+   "clip": "air_p38"
+  }
+ ],
+ "bandstop_brick": [
+  {
+   "n_ridges_orig_z3": 13,
+   "n_still_z3": 0,
+   "n_new_z3": 2,
+   "n_new_created_z3": 0,
+   "n_new_unmasked_z3": 1,
+   "n_new_seen_z3": 1,
+   "n_stronger": 0,
+   "clip": "prop_pass"
+  },
+  {
+   "n_ridges_orig_z3": 4,
+   "n_still_z3": 0,
+   "n_new_z3": 0,
+   "n_new_created_z3": 0,
+   "n_new_unmasked_z3": 0,
+   "n_new_seen_z3": 0,
+   "n_stronger": 0,
+   "clip": "prop_flyover"
+  },
+  {
+   "n_ridges_orig_z3": 36,
+   "n_still_z3": 0,
+   "n_new_z3": 1,
+   "n_new_created_z3": 1,
+   "n_new_unmasked_z3": 0,
+   "n_new_seen_z3": 0,
+   "n_stronger": 0,
+   "clip": "colsto_2050_2250"
+  },
+  {
+   "n_ridges_orig_z3": 24,
+   "n_still_z3": 0,
+   "n_new_z3": 0,
+   "n_new_created_z3": 0,
+   "n_new_unmasked_z3": 0,
+   "n_new_seen_z3": 0,
+   "n_stronger": 0,
+   "clip": "colsto_2980_3170"
+  },
+  {
+   "n_ridges_orig_z3": 41,
+   "n_still_z3": 2,
+   "n_new_z3": 2,
+   "n_new_created_z3": 2,
+   "n_new_unmasked_z3": 0,
+   "n_new_seen_z3": 0,
+   "n_stronger": 1,
+   "clip": "air_p51_mustang"
+  },
+  {
+   "n_ridges_orig_z3": 13,
+   "n_still_z3": 1,
+   "n_new_z3": 1,
+   "n_new_created_z3": 1,
+   "n_new_unmasked_z3": 0,
+   "n_new_seen_z3": 0,
+   "n_stronger": 0,
+   "clip": "air_spitfire_presenter"
+  },
+  {
+   "n_ridges_orig_z3": 7,
+   "n_still_z3": 1,
+   "n_new_z3": 5,
+   "n_new_created_z3": 2,
+   "n_new_unmasked_z3": 3,
+   "n_new_seen_z3": 0,
+   "n_stronger": 0,
+   "clip": "air_spitfire_mustang"
+  },
+  {
+   "n_ridges_orig_z3": 4,
+   "n_still_z3": 1,
+   "n_new_z3": 2,
+   "n_new_created_z3": 0,
+   "n_new_unmasked_z3": 2,
+   "n_new_seen_z3": 0,
+   "n_stronger": 1,
+   "clip": "air_star_wars_canyon"
+  },
+  {
+   "n_ridges_orig_z3": 7,
+   "n_still_z3": 0,
+   "n_new_z3": 1,
+   "n_new_created_z3": 1,
+   "n_new_unmasked_z3": 0,
+   "n_new_seen_z3": 0,
+   "n_stronger": 0,
+   "clip": "air_rainbow_f18"
+  },
+  {
+   "n_ridges_orig_z3": 26,
+   "n_still_z3": 3,
+   "n_new_z3": 1,
+   "n_new_created_z3": 1,
+   "n_new_unmasked_z3": 0,
+   "n_new_seen_z3": 0,
+   "n_stronger": 2,
+   "clip": "air_hercules_airshow"
+  },
+  {
+   "n_ridges_orig_z3": 27,
+   "n_still_z3": 0,
+   "n_new_z3": 3,
+   "n_new_created_z3": 0,
+   "n_new_unmasked_z3": 3,
+   "n_new_seen_z3": 0,
+   "n_stronger": 1,
+   "clip": "air_extra300"
+  },
+  {
+   "n_ridges_orig_z3": 0,
+   "n_still_z3": 0,
+   "n_new_z3": 0,
+   "n_new_created_z3": 0,
+   "n_new_unmasked_z3": 0,
+   "n_new_seen_z3": 0,
+   "n_stronger": 0,
+   "clip": "air_p38"
+  }
+ ],
+ "noise": [
+  {
+   "n_ridges_orig_z3": 13,
+   "n_still_z3": 10,
+   "n_new_z3": 5,
+   "n_new_created_z3": 1,
+   "n_new_unmasked_z3": 0,
+   "n_new_seen_z3": 4,
+   "n_stronger": 0,
+   "clip": "prop_pass"
+  },
+  {
+   "n_ridges_orig_z3": 4,
+   "n_still_z3": 4,
+   "n_new_z3": 0,
+   "n_new_created_z3": 0,
+   "n_new_unmasked_z3": 0,
+   "n_new_seen_z3": 0,
+   "n_stronger": 0,
+   "clip": "prop_flyover"
+  },
+  {
+   "n_ridges_orig_z3": 36,
+   "n_still_z3": 29,
+   "n_new_z3": 1,
+   "n_new_created_z3": 0,
+   "n_new_unmasked_z3": 0,
+   "n_new_seen_z3": 1,
+   "n_stronger": 0,
+   "clip": "colsto_2050_2250"
+  },
+  {
+   "n_ridges_orig_z3": 24,
+   "n_still_z3": 22,
+   "n_new_z3": 0,
+   "n_new_created_z3": 0,
+   "n_new_unmasked_z3": 0,
+   "n_new_seen_z3": 0,
+   "n_stronger": 0,
+   "clip": "colsto_2980_3170"
+  },
+  {
+   "n_ridges_orig_z3": 41,
+   "n_still_z3": 31,
+   "n_new_z3": 8,
+   "n_new_created_z3": 0,
+   "n_new_unmasked_z3": 0,
+   "n_new_seen_z3": 8,
+   "n_stronger": 0,
+   "clip": "air_p51_mustang"
+  },
+  {
+   "n_ridges_orig_z3": 13,
+   "n_still_z3": 8,
+   "n_new_z3": 7,
+   "n_new_created_z3": 1,
+   "n_new_unmasked_z3": 2,
+   "n_new_seen_z3": 4,
+   "n_stronger": 0,
+   "clip": "air_spitfire_presenter"
+  },
+  {
+   "n_ridges_orig_z3": 7,
+   "n_still_z3": 7,
+   "n_new_z3": 6,
+   "n_new_created_z3": 0,
+   "n_new_unmasked_z3": 0,
+   "n_new_seen_z3": 6,
+   "n_stronger": 0,
+   "clip": "air_spitfire_mustang"
+  },
+  {
+   "n_ridges_orig_z3": 4,
+   "n_still_z3": 2,
+   "n_new_z3": 11,
+   "n_new_created_z3": 3,
+   "n_new_unmasked_z3": 0,
+   "n_new_seen_z3": 8,
+   "n_stronger": 0,
+   "clip": "air_star_wars_canyon"
+  },
+  {
+   "n_ridges_orig_z3": 7,
+   "n_still_z3": 2,
+   "n_new_z3": 2,
+   "n_new_created_z3": 1,
+   "n_new_unmasked_z3": 0,
+   "n_new_seen_z3": 1,
+   "n_stronger": 0,
+   "clip": "air_rainbow_f18"
+  },
+  {
+   "n_ridges_orig_z3": 26,
+   "n_still_z3": 16,
+   "n_new_z3": 5,
+   "n_new_created_z3": 0,
+   "n_new_unmasked_z3": 1,
+   "n_new_seen_z3": 4,
+   "n_stronger": 0,
+   "clip": "air_hercules_airshow"
+  },
+  {
+   "n_ridges_orig_z3": 27,
+   "n_still_z3": 22,
+   "n_new_z3": 3,
+   "n_new_created_z3": 1,
+   "n_new_unmasked_z3": 0,
+   "n_new_seen_z3": 2,
+   "n_stronger": 0,
+   "clip": "air_extra300"
+  },
+  {
+   "n_ridges_orig_z3": 0,
+   "n_still_z3": 0,
+   "n_new_z3": 0,
+   "n_new_created_z3": 0,
+   "n_new_unmasked_z3": 0,
+   "n_new_seen_z3": 0,
+   "n_stronger": 0,
+   "clip": "air_p38"
+  }
+ ],
+ "jitter": [
+  {
+   "n_ridges_orig_z3": 13,
+   "n_still_z3": 13,
+   "n_new_z3": 4,
+   "n_new_created_z3": 1,
+   "n_new_unmasked_z3": 0,
+   "n_new_seen_z3": 3,
+   "n_stronger": 0,
+   "clip": "prop_pass"
+  },
+  {
+   "n_ridges_orig_z3": 4,
+   "n_still_z3": 3,
+   "n_new_z3": 2,
+   "n_new_created_z3": 0,
+   "n_new_unmasked_z3": 0,
+   "n_new_seen_z3": 2,
+   "n_stronger": 0,
+   "clip": "prop_flyover"
+  },
+  {
+   "n_ridges_orig_z3": 36,
+   "n_still_z3": 31,
+   "n_new_z3": 9,
+   "n_new_created_z3": 2,
+   "n_new_unmasked_z3": 1,
+   "n_new_seen_z3": 6,
+   "n_stronger": 0,
+   "clip": "colsto_2050_2250"
+  },
+  {
+   "n_ridges_orig_z3": 24,
+   "n_still_z3": 22,
+   "n_new_z3": 5,
+   "n_new_created_z3": 2,
+   "n_new_unmasked_z3": 0,
+   "n_new_seen_z3": 3,
+   "n_stronger": 0,
+   "clip": "colsto_2980_3170"
+  },
+  {
+   "n_ridges_orig_z3": 41,
+   "n_still_z3": 33,
+   "n_new_z3": 6,
+   "n_new_created_z3": 0,
+   "n_new_unmasked_z3": 0,
+   "n_new_seen_z3": 6,
+   "n_stronger": 0,
+   "clip": "air_p51_mustang"
+  },
+  {
+   "n_ridges_orig_z3": 13,
+   "n_still_z3": 9,
+   "n_new_z3": 2,
+   "n_new_created_z3": 2,
+   "n_new_unmasked_z3": 0,
+   "n_new_seen_z3": 0,
+   "n_stronger": 0,
+   "clip": "air_spitfire_presenter"
+  },
+  {
+   "n_ridges_orig_z3": 7,
+   "n_still_z3": 2,
+   "n_new_z3": 3,
+   "n_new_created_z3": 0,
+   "n_new_unmasked_z3": 0,
+   "n_new_seen_z3": 3,
+   "n_stronger": 0,
+   "clip": "air_spitfire_mustang"
+  },
+  {
+   "n_ridges_orig_z3": 4,
+   "n_still_z3": 4,
+   "n_new_z3": 4,
+   "n_new_created_z3": 1,
+   "n_new_unmasked_z3": 0,
+   "n_new_seen_z3": 3,
+   "n_stronger": 0,
+   "clip": "air_star_wars_canyon"
+  },
+  {
+   "n_ridges_orig_z3": 7,
+   "n_still_z3": 2,
+   "n_new_z3": 2,
+   "n_new_created_z3": 1,
+   "n_new_unmasked_z3": 0,
+   "n_new_seen_z3": 1,
+   "n_stronger": 0,
+   "clip": "air_rainbow_f18"
+  },
+  {
+   "n_ridges_orig_z3": 26,
+   "n_still_z3": 14,
+   "n_new_z3": 10,
+   "n_new_created_z3": 2,
+   "n_new_unmasked_z3": 2,
+   "n_new_seen_z3": 6,
+   "n_stronger": 0,
+   "clip": "air_hercules_airshow"
+  },
+  {
+   "n_ridges_orig_z3": 27,
+   "n_still_z3": 25,
+   "n_new_z3": 4,
+   "n_new_created_z3": 2,
+   "n_new_unmasked_z3": 1,
+   "n_new_seen_z3": 1,
+   "n_stronger": 0,
+   "clip": "air_extra300"
+  },
+  {
+   "n_ridges_orig_z3": 0,
+   "n_still_z3": 0,
+   "n_new_z3": 0,
+   "n_new_created_z3": 0,
+   "n_new_unmasked_z3": 0,
+   "n_new_seen_z3": 0,
+   "n_stronger": 0,
+   "clip": "air_p38"
+  }
+ ]
+}

@@ -553,3 +553,78 @@ def test_pipeline_style_harden_needs_original_reference():
         return 10 * np.log10(P[d < 0.6].mean() / P[(d > 8) & (d < 20)].mean())
     assert notch_db(y1) < -10                                   # VK alone: hole
     assert abs(notch_db(harden_tracks(y1, sr, trs, RemoveConfig(), x_ref=x))) < 2.0
+
+
+# ----------------------------------------------------------------------------- per-track width
+
+
+def _jittery(n, sr, fc, spread_hz=6.0, seed=3, amp=0.06):
+    """A prop-like tone: centre fc(t) plus a slow random FM of +-spread_hz (~3 Hz rate),
+    so its dechirped spectrum is ~+-spread_hz wide with a decaying skirt."""
+    rng = np.random.default_rng(seed)
+    k = max(1, sr // 50)
+    jit = np.repeat(rng.standard_normal(n // k + 2), k)[:n]
+    from scipy.ndimage import gaussian_filter1d
+    jit = gaussian_filter1d(jit, sr / 6)
+    jit *= spread_hz / (np.std(jit) * 1.5 + 1e-12)
+    return amp * np.cos(2 * np.pi * np.cumsum(fc + jit) / sr)
+
+
+def _dechirped_profile(sig, sr, t, f, offs):
+    from dopplerscrub.remove import _freq_curve
+    a, b = int(t[0] * sr), int(t[-1] * sr)
+    tq = np.arange(a, b) / sr
+    z = sig[a:b] * np.exp(-2j * np.pi * np.cumsum(_freq_curve(t, f, tq)) / sr)
+    n = sr; P = 0
+    for s0 in range(0, len(z) - n, n // 4):
+        P = P + np.abs(np.fft.fft(z[s0:s0 + n] * np.hanning(n))) ** 2
+    F = np.fft.fftfreq(n, 1 / sr)
+    return np.array([10 * np.log10(P[np.abs(np.abs(F) - o) <= 1].mean()) for o in offs])
+
+
+def test_width_none_or_default_is_bit_identical():
+    n = 30 * SR
+    tt = np.arange(n) / SR
+    x = (tone(doppler_f(tt), SR) + 0.003 * np.random.default_rng(0).standard_normal(n)).astype(np.float32)
+    tg = np.arange(2, 28, 0.25)
+    base = remove_tracks(x, SR, [Track(t=tg, f=doppler_f(tg), amp=np.ones(len(tg)), kind="doppler",
+                                       doppler_score=0.9)])
+    assert not np.array_equal(base, x)
+    for w in (None, 2.0, 1.0):                       # 1.0 < cfg.width_hz -> floored to it
+        tr = Track(t=tg, f=doppler_f(tg), amp=np.ones(len(tg)), kind="doppler", doppler_score=0.9)
+        tr.width_hz = w
+        assert np.array_equal(remove_tracks(x, SR, [tr]), base)
+
+
+def test_measured_width_removes_jittery_tone_without_notch():
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import boxfree as bf
+    n = 40 * SR
+    tt = np.arange(n) / SR
+    fc = doppler_f(tt, f0=300.0, v=80.0, d=150.0, tc=20.0)
+    bgn = 0.003 * np.random.default_rng(1).standard_normal(n)
+    x = (_jittery(n, SR, fc, amp=0.003) + bgn).astype(np.float32)   # ~22 dB over background, like p51
+    tg = np.arange(4, 36, 1 / 16)                     # fine 1/16 s grid, as chirps.py emits
+    offs = [0, 3, 6, 9, 12, 16, 20, 30, 45]
+
+    def run(w):
+        tr = Track(t=tg, f=np.interp(tg, tt, fc), amp=np.ones(len(tg)), kind="doppler", doppler_score=0.9)
+        tr.width_hz = w
+        y, st = remove_tracks(x, SR, [tr], return_stats=True)
+        return y, st["tracks"][0]
+
+    y0, _ = run(None)
+    y1, s1 = run(10.0)
+    p_bg = _dechirped_profile(bgn, SR, tg, np.interp(tg, tt, fc), offs)
+    p0 = _dechirped_profile(y0, SR, tg, np.interp(tg, tt, fc), offs)
+    p1 = _dechirped_profile(y1, SR, tg, np.interp(tg, tt, fc), offs)
+    # core and skirt brought to the background with the measured width ...
+    assert np.max(p1 - p_bg) < 3.0, (p1, p_bg)
+    assert np.max(p1[:3] - p_bg[:3]) < np.max(p0[:3] - p_bg[:3]) - 6.0
+    # ... never notched below it
+    assert np.min(p1 - p_bg) > -2.0, (p1, p_bg)
+    assert "skirt_hz" in s1
+    b = bf.boxfree(x, y1, SR)
+    assert b["n_new_created_z3"] == 0

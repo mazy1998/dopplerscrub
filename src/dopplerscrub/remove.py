@@ -41,6 +41,14 @@ Methods
   otherwise trace as the Doppler curve. Uses a fixed RNG seed for repeatable
   output.
 
+Per-track width: a track may carry ``width_hz`` (half-width of its measured
+  spread, e.g. a jittery prop tone that is +-10 Hz wide after dechirping);
+  ``None``/absent = ``cfg.width_hz``. It is read with ``getattr`` (floored at
+  ``cfg.width_hz``, capped at WIDTH_MAX_HZ) and sizes that track's corridor
+  everywhere: coherence flanks, fill, do-no-harm and the TF statistics. Coherent
+  subtraction cannot follow a wide component, so for a wide track the fill
+  (harden) does the work; in "mask" mode wide tracks take the VK + fill path.
+
 Tracks whose ``kind`` is not in ``cfg.remove_kinds`` are ignored.
 ``Track.amp`` is not used; the envelope is estimated from the signal.
 """
@@ -266,10 +274,29 @@ class _Item:
     index: int                                   # position in the caller's list
     stats: dict = field(default_factory=dict)
     fill: tuple | None = None                    # (times, per-Hz level) of a harden fill
+    width: float = 2.0                           # corridor half-width (Hz) for this track
+    wide: bool = False                           # width_hz measured > cfg.width_hz (skirt step)
+    skirt: tuple | None = None                   # (times, extent Hz) of the skirt zone
 
     @property
     def tf(self):
         return self.t, self.f
+
+
+WIDTH_MAX_HZ = 20.0       # cap on a per-track width_hz (flanks must fit the ~100 Hz baseband)
+
+
+def _track_width(tr, cfg) -> float:
+    """Corridor half-width for one track: its own ``width_hz`` if set (measured
+    spread), never narrower than cfg.width_hz, at most WIDTH_MAX_HZ."""
+    w = getattr(tr, "width_hz", None)
+    try:
+        w = float(w) if w is not None else None
+    except (TypeError, ValueError):
+        w = None
+    if w is None or not np.isfinite(w):
+        return float(cfg.width_hz)
+    return float(np.clip(w, cfg.width_hz, WIDTH_MAX_HZ))
 
 
 def _select(tracks, cfg, sr) -> list[_Item]:
@@ -286,7 +313,8 @@ def _select(tracks, cfg, sr) -> list[_Item]:
         a = np.asarray(tr.amp, float)
         strength = float(np.nanmean(a)) if a.size and np.isfinite(a).any() else 0.0
         out.append(_Item(t, np.clip(f, 1.0, sr / 2 - 1.0), float(tr.doppler_score or 0.0),
-                         strength, i))
+                         strength, i, width=_track_width(tr, cfg),
+                         wide=_track_width(tr, cfg) > cfg.width_hz + 1e-9))
     out.sort(key=lambda it: (-it.score, -(it.t[-1] - it.t[0])))
     out = _dedupe(out)
     out.sort(key=lambda it: -it.strength)        # strongest first (sequential methods)
@@ -336,6 +364,10 @@ FILL_Q_CAL = 1.30         # ... times this = the mean for pure noise (calibrated
 FILL_MED_CAL = 1.31       # median-of-sub-bands -> mean (calibrated below; ~1/ln 2 for raw powers)
 CROSS_DB = 8.0            # corridor this far above the flank level = crossing partial
 CROSS_MAX_S = 1.5         # ... but only for brief excursions (residual tones persist)
+# A track with a measured width_hz > cfg.width_hz gets NO crossing-partial keep: its
+# corridor IS the jittery target, whose bursts sit 10-20 dB over the (skirt-scaled)
+# flanks and would be read as crossings. Cost: a partial crossing a <= +-12 Hz core
+# is filled for <= CROSS_MAX_S.
 COH_SMOOTH_S = 1.5        # coherence decision time scale
 COH_ENV = (1.8, 3.5)      # envelope power / expected noise power: subtract nothing .. all
 COH_CORR = (1.6, 2.6)     # same for the whole corridor (method-agnostic gate)
@@ -793,7 +825,7 @@ def _harden_one(y, sr, item: _Item, cfg, rng, extra_hz: float = 0.0, others=()):
     fs_d = sr / D
     m = zd.shape[0]
     bb = _BB(zd, fs_d, boxcar=True)
-    W = cfg.width_hz + extra_hz
+    W = item.width + extra_hz
     H = bb.corridor(W, FILL_EDGE_HZ)
     keep = np.sqrt(np.clip(1 - H ** 2, 0, 1))
     removed = bb.filt(1 - keep)
@@ -821,7 +853,7 @@ def _harden_one(y, sr, item: _Item, cfg, rng, extra_hz: float = 0.0, others=()):
     pc = _gsmooth((np.abs(corridor) ** 2).sum(1), nf)
     pf = np.maximum(level * Hbw, 1e-30)
     with np.errstate(over="ignore"):
-        hot = pc > pf * 10 ** (CROSS_DB / 10)
+        hot = (pc > pf * 10 ** (CROSS_DB / 10)) & (not item.wide)
     cross = _short_runs(hot, int(CROSS_MAX_S * fs_d))
     cross = np.clip(_gsmooth(cross.astype(float), 2 * nf) * 1.5, 0, 1)
     gate = 1.0 - cross                                     # 0 = keep original
@@ -847,7 +879,128 @@ def _harden_one(y, sr, item: _Item, cfg, rng, extra_hz: float = 0.0, others=()):
     c = 1 - np.sqrt(np.clip(1 - w ** 2, 0, 1))            # power-complementary time fade
     y[a:b] = seg - 2.0 * np.real((c[:, None] * R - w[:, None] * N) * np.conj(carrier)[:, None])
     item.stats["filled"] = True
+    item.stats["fill_gate_mean"] = float(np.mean(gate))
+    item.stats["fill_hot_frac"] = float(np.mean(hot))
     item.fill = (td, level * np.interp(td, tq, w) * gate)   # per-Hz fill level actually applied
+
+
+# ----------------------------------------------------------------------------- skirt
+
+SKIRT_MAX_HZ = 50.0       # skirt zone never reaches further than this from f(t)
+SKIRT_BG_HZ = (55.0, 80.0)  # far ring (offsets from f(t)) that defines the background
+SKIRT_RATE = 400          # complex baseband rate of the skirt step (Nyquist 200 Hz)
+SKIRT_NPER_S = 1.0        # STFT window (1 Hz bins) ...
+SKIRT_HOP_S = 0.125       # ... and hop
+SKIRT_MEET_DB = 1.0       # the skirt ends where the profile is within this of the background
+SKIRT_SMOOTH_S = 0.5      # time smoothing of the power used for the gain
+SKIRT_EDGE_HZ = 3.0       # outer taper of the skirt zone
+SKIRT_CORE_DB = 6.0       # a frame gets a skirt only if its core stands this far over background
+SKIRT_HARD_DB = 10.0      # shoulder this far over background is too strong for an STFT gain
+                          # (~20-25 dB dynamic range): the core fill is widened to cover it
+
+
+def _skirt_one(y, sr, item: _Item, cfg, others=()):
+    """Measured-wide tracks only (width_hz > cfg.width_hz): a jittery tone's
+    dechirped spectrum has a slowly decaying skirt well beyond its core width,
+    which the attacker's 2 s STFT integrates into a visible streak. In the
+    track's warped baseband, for each STFT frame: the background is the median
+    power of the far ring SKIRT_BG_HZ (other tracks excluded); the skirt extent
+    is where the running minimum of the profile (outward from the core edge, both
+    sides averaged) first comes within SKIRT_MEET_DB of it. Frames whose
+    profile does not decay to the background within SKIRT_MAX_HZ (dense
+    speech/harmonics: no shoulder to remove) or whose core is not
+    SKIRT_CORE_DB over it get no skirt. Inside the zone (outside the core) the
+    ring at offset r is scaled by sqrt(min(1, background / shoulder(r))), where
+    shoulder(r) is that running minimum: the decaying shoulder is brought to the
+    background (never below), and content riding above it (a crossing speech
+    harmonic) is only attenuated as much as the shoulder under it.
+    In place; only the change is added back."""
+    t, f = item.tf
+    n = y.shape[0]
+    pad = cfg.pad_s
+    a, b = _span(t, pad, sr, n)
+    if b - a < int(4 * sr):
+        return
+    fv = min(SKIRT_RATE, sr)
+    if 0.65 * fv / 2 < SKIRT_BG_HZ[1] + 5:
+        return
+    tq = (a + np.arange(b - a)) / sr
+    phi = 2 * np.pi * np.cumsum(_freq_curve(t, f, tq)) / sr
+    phi -= phi[0]
+    w = _fade(tq, t[0], t[-1], pad, n / sr)
+    carrier = np.exp(-1j * phi)
+    seg = y[a:b].astype(np.float64)
+    r = Fraction(fv, sr).limit_denominator(1000)
+    up, down = r.numerator, r.denominator
+    zb = resample_poly(seg * carrier[:, None], up, down, axis=0, window=RS_WINDOW)
+    m, ch = zb.shape
+    nper = int(round(SKIRT_NPER_S * fv)); hop = int(round(SKIRT_HOP_S * fv))
+    if m < 4 * nper:
+        return
+    F, tt, X = stft(zb, fs=fv, window="hann", nperseg=nper, noverlap=nper - hop, axis=0,
+                    return_onesided=False, boundary="even", padded=True)      # (nf, ch, nt)
+    P = (np.abs(X) ** 2).sum(1)                                               # (nf, nt)
+    aF = np.abs(F)
+    tl = a / sr + tt
+    ring = (aF >= SKIRT_BG_HZ[0]) & (aF <= SKIRT_BG_HZ[1])
+    okr = np.ones((ring.sum(), len(tt)), bool)
+    for off in _others_offsets((t, f), list(others), tl, pad):
+        with np.errstate(invalid="ignore"):
+            okr &= ~(np.abs(F[ring][:, None] - off[None, :]) < cfg.width_hz + 4.0)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        bg = np.nanmedian(np.where(okr, P[ring], np.nan), axis=0) * FILL_MED_CAL
+    if not np.isfinite(bg).any():
+        return
+    bg = np.where(np.isfinite(bg), bg, np.nanmedian(bg))
+    ns = max(1, int(round(FILL_LONG_S / SKIRT_HOP_S)))
+    bg = _gsmooth(bg, ns)
+    Ps = gaussian_filter1d(P, SKIRT_SMOOTH_S / SKIRT_HOP_S / 2, axis=1, mode="nearest")
+    Ps = uniform_filter1d(Ps, 3, axis=0, mode="nearest")
+    core = item.width + FILL_EDGE_HZ
+    # per-frame extent from the side-averaged profile, running min outward
+    offs = np.arange(int(np.ceil(core)), int(SKIRT_MAX_HZ) + 1)
+    prof = np.stack([0.5 * (Ps[np.argmin(np.abs(F - o))] + Ps[np.argmin(np.abs(F + o))]) for o in offs])
+    runmin = np.minimum.accumulate(prof, axis=0)
+    meet = runmin <= bg[None, :] * 10 ** (SKIRT_MEET_DB / 10)
+    pcore = Ps[aF <= core].mean(0)
+    ok = meet.any(0) & (pcore >= bg * 10 ** (SKIRT_CORE_DB / 10))
+    span = (tl >= t[0]) & (tl <= t[-1])
+    # strong shoulder -> widen the core (exact long-FFT fill in _harden_one), so the
+    # STFT gain below only handles the weak tail
+    hard = runmin <= bg[None, :] * 10 ** (SKIRT_HARD_DB / 10)
+    sel = ok & span & hard.any(0)
+    if sel.any():
+        r_hard = float(np.percentile(offs[np.argmax(hard, axis=0)][sel], 90))
+        if r_hard > item.width:
+            item.width = min(r_hard, WIDTH_MAX_HZ)
+            item.stats["width_widened_hz"] = item.width
+            core = item.width + FILL_EDGE_HZ
+    ext = np.where(ok, offs[np.argmax(meet, axis=0)], core).astype(float)
+    ext = np.clip(_gsmooth(ext, max(1, int(round(0.5 / SKIRT_HOP_S)))), core, SKIRT_MAX_HZ)
+    zone = np.clip((ext[None, :] + SKIRT_EDGE_HZ - aF[:, None]) / SKIRT_EDGE_HZ, 0, 1)
+    zone = 0.5 - 0.5 * np.cos(np.pi * zone)
+    zone[aF <= core] = 0.0                                       # the core was filled already
+    oi = np.clip(np.round(aF - offs[0]).astype(int), 0, len(offs) - 1)
+    shoulder = runmin[oi]                                        # (nf, nt) envelope at |F|
+    g = np.sqrt(np.clip(bg[None, :] / np.maximum(shoulder, 1e-30), 0, 1))
+    g = 1 - zone * (1 - g)                                       # 1 outside the zone
+    tw = np.interp(tl, tq, w)                                    # track fade
+    g = 1 - tw[None, :] * (1 - g)
+    if np.all(g > 0.999):
+        return
+    _, dz = istft((g - 1)[:, None, :] * X, fs=fv, window="hann", nperseg=nper, noverlap=nper - hop,
+                  time_axis=-1, freq_axis=0, input_onesided=False, boundary=True)
+    dz = np.moveaxis(dz, -1, 0)[:m]
+    if dz.shape[0] < m:
+        dz = np.concatenate([dz, np.zeros((m - dz.shape[0], ch), complex)], axis=0)
+    d = resample_poly(dz, down, up, axis=0, window=RS_WINDOW)
+    L = b - a
+    if d.shape[0] < L:
+        d = np.concatenate([d, np.zeros((L - d.shape[0], ch), complex)], axis=0)
+    y[a:b] = seg + 2.0 * np.real(d[:L] * np.conj(carrier)[:, None])
+    item.stats["skirt_hz"] = float(np.median(ext[span])) if span.any() else float("nan")
+    item.skirt = (tl, ext * tw)
 
 
 # ----------------------------------------------------------------------------- Vold-Kalman
@@ -999,7 +1152,7 @@ def _vk_group(y, sr, items: list[_Item], cfg, refine=True, p=VK_ORDER, all_items
         ai = list(all_items)
         pos = next((j for j, o in enumerate(ai) if o is it), None)
         oth = _near(ai, pos, pad) if pos is not None else []
-        _, level = _flank_density(_BB(zk, fv), cfg.width_hz, FILL_EDGE_HZ,
+        _, level = _flank_density(_BB(zk, fv), it.width, FILL_EDGE_HZ,
                                   _others_offsets(it.tf, oth, tl, pad),
                                   max(1, int(FILL_FRAME_S * fv)))
         gate, _ = _coherence(X[k], level, ch, _vk_enbw(r2s[k], fv, p), fv)
@@ -1016,8 +1169,8 @@ def _vk_group(y, sr, items: list[_Item], cfg, refine=True, p=VK_ORDER, all_items
 
 # ----------------------------------------------------------------------------- do no harm
 
-def _safe_half_width(cfg, extra_hz: float) -> float:
-    return max(cfg.width_hz + FILL_EDGE_HZ + extra_hz, 3.5)
+def _safe_half_width(width_hz: float, extra_hz: float) -> float:
+    return max(width_hz + FILL_EDGE_HZ + extra_hz, 3.5)
 
 
 def _do_no_harm(x0, y, sr, item: _Item, cfg, confirmed: bool, half: float, others=()):
@@ -1190,6 +1343,8 @@ def _run(x, sr, tracks, cfg, steps, seed=0x5C2B, x_ref=None):
     # only the DIFFERENCE is upsampled and added back, so untouched samples
     # (everything outside the corridors' time spans) stay bit-exact.
     fmax = max(float(np.max(it.f)) for it in items)
+    if any(it.wide for it in items):            # the skirt's background ring must be in-band
+        fmax += SKIRT_BG_HZ[1] + 5.0 - 60.0
     fw = _lowband_rate(sr, fmax) if LOWBAND else sr
     ref = None
     if x_ref is not None:
@@ -1222,7 +1377,7 @@ def _run(x, sr, tracks, cfg, steps, seed=0x5C2B, x_ref=None):
             for i, it in enumerate(items):
                 others = _near(items, i, cfg.pad_s)
                 _subtract_one(y, sr, it, cfg.pad_s, refine=REFINE, others=others,
-                              width_hz=cfg.width_hz)
+                              width_hz=it.width)
         elif step == "mask":
             # the STFT notch widens with the sweep inside its ~1 s window; for
             # steep tracks it would be a meaningless wide hole -> those use VK
@@ -1231,7 +1386,7 @@ def _run(x, sr, tracks, cfg, steps, seed=0x5C2B, x_ref=None):
                 tt = np.arange(it.t[0], it.t[-1] + 1e-9, 0.25)
                 sl = np.abs(np.gradient(_freq_curve(it.t, it.f, tt), 0.25)) if len(tt) > 2 else [0.0]
                 s95 = float(np.percentile(sl, 95))
-                if s95 <= MASK_MAX_SLOPE:
+                if s95 <= MASK_MAX_SLOPE and it.width <= cfg.width_hz:
                     slow.append(it)
                     extra_mask[id(it)] = 1.0 + 0.5 * s95
                 else:
@@ -1247,6 +1402,11 @@ def _run(x, sr, tracks, cfg, steps, seed=0x5C2B, x_ref=None):
                           all_items=items)
         elif step == "harden":
             rng = np.random.default_rng(seed)
+            # measured-wide tracks: scale the skirt down to the far background FIRST,
+            # so the core fill below takes its level from flanks that are background
+            for i, it in enumerate(items):
+                if it.wide and it.score >= min_score:
+                    _skirt_one(y, sr, it, cfg, _near(items, i, cfg.pad_s, df_hz=SKIRT_BG_HZ[1]))
             for i, it in enumerate(items):
                 if it.score < min_score:
                     it.stats["filled"] = False         # not confirmed by the detector
@@ -1258,8 +1418,11 @@ def _run(x, sr, tracks, cfg, steps, seed=0x5C2B, x_ref=None):
     records = []
     for i, it in enumerate(items):
         others = _near(items, i, cfg.pad_s)
-        half = _safe_half_width(cfg, extra_mask.get(id(it), 0.0))
-        records.append(_do_no_harm(refw, y, sr, it, cfg, it.score >= min_score, half, others))
+        half = _safe_half_width(it.width, extra_mask.get(id(it), 0.0))
+        rec = _do_no_harm(refw, y, sr, it, cfg, it.score >= min_score, half, others)
+        if rec is not None and it.skirt is not None:     # TF stats: count the skirt zone too
+            rec = (rec[0], rec[1], max(rec[2], float(np.nanmax(it.skirt[1]))))
+        records.append(rec)
     frac, frac_band = _tf_fraction(records, items, x0.shape[0], sr)
     if sr < sr_full:                                   # back to the full rate: add the difference
         d = y - x0
