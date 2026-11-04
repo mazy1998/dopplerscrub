@@ -508,3 +508,23 @@ def test_sideband_offset_is_added_once_in_harmonic_proposals():
     second=[q for q in result if q.harmonic==2]
     assert second
     for q in second:np.testing.assert_allclose(q.f,2*(105-.3*q.t)+offset,atol=1e-8)
+
+
+def test_speech_comodulated_partials_are_cut_but_tones_under_speech_kept():
+    from dopplerscrub.detect import _reject_speech_comodulated
+    from dopplerscrub.types import Track
+    sr = 8000; dur = 30.
+    t = np.arange(int(sr * dur)) / sr
+    rng = np.random.default_rng(11)
+    f0 = 140 + 4 * np.sin(2 * np.pi * .05 * t)              # slow, smooth pitch
+    syll = (.15 + .85 * np.sin(2 * np.pi * 2.3 * t) ** 2)     # ~4.6 Hz syllable envelope
+    voice = sum(np.sin(k * 2 * np.pi * np.cumsum(f0) / sr) / k for k in range(1, 20)) * syll
+    tone_f = 760 - 60 * np.tanh((t - 15) / 4)                 # a pass tone, steady level
+    x = .05 * voice + .01 * np.sin(2 * np.pi * np.cumsum(tone_f) / sr) + rng.normal(0, .002, len(t))
+    g = np.arange(2, 28, .25)
+    partial = Track(g, 5 * (140 + 4 * np.sin(2 * np.pi * .05 * g)), np.zeros(len(g)), .85, None, 1, 0, 'doppler')
+    tone = Track(g, 760 - 60 * np.tanh((g - 15) / 4), np.zeros(len(g)), .85, None, 1, 1, 'doppler')
+    out = _reject_speech_comodulated([partial, tone], x, sr, DetectConfig())
+    assert not any(q.group == 0 for q in out)
+    kept = [q for q in out if q.group == 1]
+    assert kept and sum(q.t1 - q.t0 for q in kept) > 20

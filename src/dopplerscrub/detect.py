@@ -1377,10 +1377,73 @@ def detect_tracks(x,sr,cfg=DetectConfig()) -> list[Track]:
             if np.mean(s[low,columns]*(1-w)+s[low+1,columns]*w)<3:continue
         if q.kind=='doppler':q.doppler_score=max(cfg.doppler_threshold,q.doppler_score)
         kept.append(q)
+    # Voice partials must not seed a family or a steep core, and the stages
+    # that extend sources (chirp continuation, family probes) must not walk
+    # into the voice either: test before and after them.
+    speech_env=_speech_envelopes(x,sr)
+    kept=_reject_speech_comodulated(kept,x,sr,cfg,env=speech_env)
     kept.extend(_steep_cores(x,sr,cfg,kept))
     from .families import apply_families
     kept=apply_families(kept,t,f,s,amp,cfg)
+    kept=_reject_speech_comodulated(kept,x,sr,cfg,env=speech_env)
     return sorted(kept,key=lambda q:(q.group,q.harmonic,q.t0))
+
+
+def _speech_envelopes(x,sr,hop=1/16,win=.064):
+    """Log power per 1/16 s frame (8 kHz, 64 ms windows) for envelope tests."""
+    rate=8000;g=math.gcd(int(sr),rate)
+    y=signal.resample_poly(np.asarray(x,float),rate//g,int(sr)//g)
+    n=int(win*rate);step=int(hop*rate)
+    if len(y)<n:return np.zeros(0),np.zeros(0),np.zeros((0,0))
+    ff,tt,Z=signal.stft(y,rate,nperseg=n,noverlap=n-step,nfft=1024,boundary=None,padded=False)
+    return tt,ff,np.abs(Z)**2
+
+
+def _reject_speech_comodulated(tracks,x,sr,cfg,r_max=.5,mod_db=2.,window=64,env=None):
+    """Cut doppler tracks where their level co-modulates with the speech band.
+
+    A voice partial is part of the voice: at syllable rate (2-8 Hz) its level
+    rises and falls with the whole 250-3400 Hz envelope. An engine tone heard
+    under speech, or a faint tone in noise, does not; the slow common swell of
+    a pass toward CPA is removed by high-passing both envelopes (1 s trend).
+    Tested in 4 s windows where the band envelope is itself syllable-modulated;
+    co-modulated frames (padded 0.5 s) are cut, remaining pieces kept."""
+    if not any(q.kind=='doppler' for q in tracks):return tracks
+    tt,ff,P=env if env is not None else _speech_envelopes(x,sr)
+    speech=(ff>=250)&(ff<=3400)
+    if not speech.any() or len(tt)<32:return tracks
+    def bandpass(v):
+        # remove the >1 s trend only; syllable rates (2-8 Hz) sit right at
+        # the 1/16 s frame rate's Nyquist, so no further smoothing
+        return v-ndimage.uniform_filter1d(v,16,mode='nearest')
+    out=[]
+    for q in tracks:
+        m=(tt>=q.t0)&(tt<=q.t1)
+        if q.kind!='doppler' or m.sum()<24:out.append(q);continue
+        cols=np.flatnonzero(m);fq=np.interp(tt[cols],q.t,q.f)
+        if np.median(fq)<200:out.append(q);continue
+        half=max(4.,getattr(q,'width_hz',None) or 0.)
+        near=np.abs(ff[:,None]-fq[None,:])<=half
+        tone=10*np.log10(np.max(np.where(near,P[:,cols],0.),axis=0)+1e-20)
+        band=speech[:,None]&(np.abs(ff[:,None]-fq[None,:])>25)
+        broad=10*np.log10(np.sum(np.where(band,P[:,cols],0.),axis=0)+1e-20)
+        a=bandpass(tone);b=bandpass(broad)
+        bad=np.zeros(len(cols),bool);w=min(window,len(cols));step=max(1,w//4)
+        for i in range(0,len(cols)-w+1,step):
+            aw=a[i:i+w];bw=b[i:i+w]
+            if np.std(bw)<mod_db or np.std(aw)<1e-6:continue
+            if float(np.corrcoef(aw,bw)[0,1])>=r_max:bad[i:i+w]=True
+        if not bad.any():out.append(q);continue
+        bad=ndimage.binary_dilation(bad,np.ones(17,bool))
+        cut=np.interp(q.t,tt[cols],bad.astype(float))>.5
+        keep=np.flatnonzero(~cut)
+        for part in np.split(keep,np.flatnonzero(np.diff(keep)>1)+1):
+            if len(part)<2 or q.t[part[-1]]-q.t[part[0]]<cfg.min_duration_s:continue
+            piece=Track(q.t[part],q.f[part],q.amp[part],q.doppler_score,q.fit,q.harmonic,q.group,q.kind,q.width_hz)
+            for k,v in vars(q).items():
+                if k.startswith('_'):setattr(piece,k,v)
+            out.append(piece)
+    return out
 
 
 def _covered(q,others,tol=2.5):
