@@ -1356,7 +1356,31 @@ def detect_tracks(x,sr,cfg=DetectConfig()) -> list[Track]:
             if np.mean(s[low,columns]*(1-w)+s[low+1,columns]*w)<3:continue
         if q.kind=='doppler':q.doppler_score=max(cfg.doppler_threshold,q.doppler_score)
         kept.append(q)
+    kept.extend(_steep_cores(x,sr,cfg,kept))
     return sorted(kept,key=lambda q:(q.group,q.harmonic,q.t0))
+
+
+def _covered(q,others,tol=2.5):
+    """Share of q's samples lying within tol Hz of some doppler track."""
+    hit=np.zeros(len(q.t),bool)
+    for o in others:
+        if o.kind!='doppler' or o.t1<q.t0 or o.t0>q.t1:continue
+        inside=(q.t>=o.t0)&(q.t<=o.t1)
+        if not inside.any():continue
+        hit[inside]|=abs(np.interp(q.t[inside],o.t,o.f)-q.f[inside])<=tol
+    return float(np.mean(hit)) if len(hit) else 1.
+
+
+def _steep_cores(x,sr,cfg,tracks):
+    """Fast sweeps (pass cores) that the 0.25 s-frame detectors smear out."""
+    from .chirps import detect_chirps
+    group=max((q.group for q in tracks),default=-1)+1;out=[]
+    for q in detect_chirps(x,sr,cfg):
+        if _covered(q,tracks+out)>=.8:continue
+        q.group=group;group+=1
+        q.doppler_score=max(cfg.doppler_threshold,q.doppler_score)
+        out.append(q)
+    return out
 
 
 def main():
