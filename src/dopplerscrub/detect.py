@@ -996,9 +996,17 @@ def detect_tracks(x,sr,cfg=DetectConfig()) -> list[Track]:
             values=np.asarray(null_maxima)
             median=np.median(values);mad=np.median(abs(values-median))
             central=values[values<=median+3*max(mad,.05)]
-            location,scale=stats.gumbel_r.fit(central)
-            # 0.1 expected false source/hour, 60 windows/hour, 8 CLEAN trials.
-            threshold=stats.gumbel_r.isf(.1/(60*8),loc=location,scale=scale)
+            # A degenerate central population (e.g. nearly identical maxima on
+            # an already cleaned second pass) can make the ML fit overflow;
+            # keep the local reversed-control threshold then.
+            threshold=np.nan
+            if len(central)>=5 and np.std(central)>.05:
+                try:
+                    location,scale=stats.gumbel_r.fit(central)
+                    # 0.1 expected false source/hour, 60 windows/hour, 8 CLEAN trials.
+                    threshold=stats.gumbel_r.isf(.1/(60*8),loc=location,scale=scale)
+                except (OverflowError,ValueError,RuntimeError,FloatingPointError):
+                    threshold=np.nan
             if np.isfinite(threshold) and threshold<=2*null_threshold:
                 null_threshold=max(null_threshold,float(threshold))
         for iteration in range(8):
@@ -1383,6 +1391,7 @@ def detect_tracks(x,sr,cfg=DetectConfig()) -> list[Track]:
     speech_env=_speech_envelopes(x,sr)
     kept=_reject_speech_comodulated(kept,x,sr,cfg,env=speech_env)
     kept.extend(_steep_cores(x,sr,cfg,kept))
+    kept.extend(_jet_tones(x,sr,cfg,kept))
     from .families import apply_families
     kept=apply_families(kept,t,f,s,amp,cfg)
     kept=_reject_speech_comodulated(kept,x,sr,cfg,env=speech_env)
@@ -1455,6 +1464,19 @@ def _covered(q,others,tol=2.5):
         if not inside.any():continue
         hit[inside]|=abs(np.interp(q.t[inside],o.t,o.f)-q.f[inside])<=tol
     return float(np.mean(hit)) if len(hit) else 1.
+
+
+def _jet_tones(x,sr,cfg,tracks):
+    """Hook for jets.detect_jet_tones (remove-doppler-e7); no-op until it lands."""
+    try:
+        from .jets import detect_jet_tones
+    except ImportError:
+        return []
+    group=max((q.group for q in tracks),default=-1)+1;out=[]
+    for q in detect_jet_tones(x,sr,cfg):
+        if q.kind=='doppler' and _covered(q,tracks+out)>=.8:continue
+        q.group=group;group+=1;out.append(q)
+    return out
 
 
 def _steep_cores(x,sr,cfg,tracks):
