@@ -815,16 +815,33 @@ def _extend_parametric(track,t,f,amp,s,cfg):
 
 
 
-def _verified_curve_mask(local,f,curve,cfg,likelihood):
-    values=_sample(local,f,curve);evidence=_local_evidence(local,f,curve)
+def _background_image(s,f):
+    """The frequency-median background _local_evidence uses, for every bin at
+    once (same band-dependent widths), so repeated curve probes only sample it."""
+    s=np.asarray(s);df=f[1]-f[0];out=np.empty(s.shape,np.float32)
+    for lower,upper,width in ((0,450,18.),(450,700,80.),(700,np.inf,160.)):
+        rows=np.flatnonzero((f>lower)&(f<=upper))
+        if not len(rows):continue
+        size=max(5,int(round(width/df))|1)
+        a=max(0,rows[0]-size//2);b=min(len(f),rows[-1]+size//2+1)
+        out[rows]=_frequency_median(s[a:b],size)[rows-a]
+    rows=np.flatnonzero(f<=0)
+    if len(rows):out[rows]=s[rows]
+    return out
+
+
+def _verified_curve_mask(local,f,curve,cfg,likelihood,background=None):
+    values=_sample(local,f,curve)
+    evidence=_local_evidence(local,f,curve) if background is None else values-_sample(background,f,curve)
     support=(ndimage.uniform_filter1d(values,9,mode='nearest')>=0.)&(ndimage.uniform_filter1d(evidence,9,mode='nearest')>=1.)
     support&=(curve>=cfg.fmin)&(curve<=cfg.fmax)
     support=_close_evidence_gaps(support)
     indices=np.flatnonzero(support);accepted=np.zeros(len(curve),bool)
-    whole=_curve_significance(local,f,curve,likelihood=likelihood)
+    whole=None
     for part in np.split(indices,np.flatnonzero(np.diff(indices)>1)+1):
         if len(part)<2 or (part[-1]-part[0])*cfg.hop_s<cfg.min_duration_s:continue
         if np.mean(evidence[part])<1.:continue
+        if whole is None:whole=_curve_significance(local,f,curve,likelihood=likelihood)
         if whole<4.5 and _curve_significance(local,f,curve,part,likelihood)<5.:continue
         accepted[part]=True
     return accepted
@@ -979,9 +996,17 @@ def detect_tracks(x,sr,cfg=DetectConfig()) -> list[Track]:
             values=np.asarray(null_maxima)
             median=np.median(values);mad=np.median(abs(values-median))
             central=values[values<=median+3*max(mad,.05)]
-            location,scale=stats.gumbel_r.fit(central)
-            # 0.1 expected false source/hour, 60 windows/hour, 8 CLEAN trials.
-            threshold=stats.gumbel_r.isf(.1/(60*8),loc=location,scale=scale)
+            # A degenerate central population (e.g. nearly identical maxima on
+            # an already cleaned second pass) can make the ML fit overflow;
+            # keep the local reversed-control threshold then.
+            threshold=np.nan
+            if len(central)>=5 and np.std(central)>.05:
+                try:
+                    location,scale=stats.gumbel_r.fit(central)
+                    # 0.1 expected false source/hour, 60 windows/hour, 8 CLEAN trials.
+                    threshold=stats.gumbel_r.isf(.1/(60*8),loc=location,scale=scale)
+                except (OverflowError,ValueError,RuntimeError,FloatingPointError):
+                    threshold=np.nan
             if np.isfinite(threshold) and threshold<=2*null_threshold:
                 null_threshold=max(null_threshold,float(threshold))
         for iteration in range(8):
@@ -1062,11 +1087,15 @@ def detect_tracks(x,sr,cfg=DetectConfig()) -> list[Track]:
                 nearby=np.array([_sample(original,f,ff+delta) for delta in shifts])
                 residual=shifts[np.argmax(nearby,axis=0)]
                 measured=valid & (_sample(original,f,ff)>3)
+                # Only harmonics with measured support become removal targets;
+                # unobserved orders are still CLEANed from the search below.
+                emit=k==1 or ndimage.uniform_filter1d(measured.astype(float),16,mode='nearest').max()>=.75
                 rms=float(np.sqrt(np.mean(residual[measured]**2))) if measured.any() else None
                 fit=dict(zip(('f0','v','d_cpa','t_cpa'),map(float,p*np.array([k,1,1,1]))),rms_hz=rms)
                 tr=Track(grid,freq,amplitudes,min(.99,.5+score/20),fit,harmonic,source['group'],'doppler')
                 old=source['tracks'].get(harmonic)
-                if old is not None:
+                if not emit:pass
+                elif old is not None:
                     all_t=np.r_[old.t,tr.t];order=np.argsort(all_t,kind='stable')
                     unique,ix=np.unique(all_t[order],return_index=True)
                     old.f=np.r_[old.f,tr.f][order][ix];old.amp=np.r_[old.amp,tr.amp][order][ix];old.t=unique
@@ -1356,8 +1385,74 @@ def detect_tracks(x,sr,cfg=DetectConfig()) -> list[Track]:
             if np.mean(s[low,columns]*(1-w)+s[low+1,columns]*w)<3:continue
         if q.kind=='doppler':q.doppler_score=max(cfg.doppler_threshold,q.doppler_score)
         kept.append(q)
+    # Voice partials must not seed a family or a steep core, and the stages
+    # that extend sources (chirp continuation, family probes) must not walk
+    # into the voice either: test before and after them.
+    speech_env=_speech_envelopes(x,sr)
+    kept=_reject_speech_comodulated(kept,x,sr,cfg,env=speech_env)
     kept.extend(_steep_cores(x,sr,cfg,kept))
+    kept.extend(_jet_tones(x,sr,cfg,kept))
+    from .families import apply_families
+    kept=apply_families(kept,t,f,s,amp,cfg)
+    kept=_reject_speech_comodulated(kept,x,sr,cfg,env=speech_env)
     return sorted(kept,key=lambda q:(q.group,q.harmonic,q.t0))
+
+
+def _speech_envelopes(x,sr,hop=1/16,win=.064):
+    """Log power per 1/16 s frame (8 kHz, 64 ms windows) for envelope tests."""
+    rate=8000;g=math.gcd(int(sr),rate)
+    y=signal.resample_poly(np.asarray(x,float),rate//g,int(sr)//g)
+    n=int(win*rate);step=int(hop*rate)
+    if len(y)<n:return np.zeros(0),np.zeros(0),np.zeros((0,0))
+    ff,tt,Z=signal.stft(y,rate,nperseg=n,noverlap=n-step,nfft=1024,boundary=None,padded=False)
+    return tt,ff,np.abs(Z)**2
+
+
+def _reject_speech_comodulated(tracks,x,sr,cfg,r_max=.5,mod_db=2.,window=64,env=None):
+    """Cut doppler tracks where their level co-modulates with the speech band.
+
+    A voice partial is part of the voice: at syllable rate (2-8 Hz) its level
+    rises and falls with the whole 250-3400 Hz envelope. An engine tone heard
+    under speech, or a faint tone in noise, does not; the slow common swell of
+    a pass toward CPA is removed by high-passing both envelopes (1 s trend).
+    Tested in 4 s windows where the band envelope is itself syllable-modulated;
+    co-modulated frames (padded 0.5 s) are cut, remaining pieces kept."""
+    if not any(q.kind=='doppler' for q in tracks):return tracks
+    tt,ff,P=env if env is not None else _speech_envelopes(x,sr)
+    speech=(ff>=250)&(ff<=3400)
+    if not speech.any() or len(tt)<32:return tracks
+    def bandpass(v):
+        # remove the >1 s trend only; syllable rates (2-8 Hz) sit right at
+        # the 1/16 s frame rate's Nyquist, so no further smoothing
+        return v-ndimage.uniform_filter1d(v,16,mode='nearest')
+    out=[]
+    for q in tracks:
+        m=(tt>=q.t0)&(tt<=q.t1)
+        if q.kind!='doppler' or m.sum()<24:out.append(q);continue
+        cols=np.flatnonzero(m);fq=np.interp(tt[cols],q.t,q.f)
+        if np.median(fq)<200:out.append(q);continue
+        half=max(4.,getattr(q,'width_hz',None) or 0.)
+        near=np.abs(ff[:,None]-fq[None,:])<=half
+        tone=10*np.log10(np.max(np.where(near,P[:,cols],0.),axis=0)+1e-20)
+        band=speech[:,None]&(np.abs(ff[:,None]-fq[None,:])>25)
+        broad=10*np.log10(np.sum(np.where(band,P[:,cols],0.),axis=0)+1e-20)
+        a=bandpass(tone);b=bandpass(broad)
+        bad=np.zeros(len(cols),bool);w=min(window,len(cols));step=max(1,w//4)
+        for i in range(0,len(cols)-w+1,step):
+            aw=a[i:i+w];bw=b[i:i+w]
+            if np.std(bw)<mod_db or np.std(aw)<1e-6:continue
+            if float(np.corrcoef(aw,bw)[0,1])>=r_max:bad[i:i+w]=True
+        if not bad.any():out.append(q);continue
+        bad=ndimage.binary_dilation(bad,np.ones(17,bool))
+        cut=np.interp(q.t,tt[cols],bad.astype(float))>.5
+        keep=np.flatnonzero(~cut)
+        for part in np.split(keep,np.flatnonzero(np.diff(keep)>1)+1):
+            if len(part)<2 or q.t[part[-1]]-q.t[part[0]]<cfg.min_duration_s:continue
+            piece=Track(q.t[part],q.f[part],q.amp[part],q.doppler_score,q.fit,q.harmonic,q.group,q.kind,q.width_hz)
+            for k,v in vars(q).items():
+                if k.startswith('_'):setattr(piece,k,v)
+            out.append(piece)
+    return out
 
 
 def _covered(q,others,tol=2.5):
@@ -1369,6 +1464,19 @@ def _covered(q,others,tol=2.5):
         if not inside.any():continue
         hit[inside]|=abs(np.interp(q.t[inside],o.t,o.f)-q.f[inside])<=tol
     return float(np.mean(hit)) if len(hit) else 1.
+
+
+def _jet_tones(x,sr,cfg,tracks):
+    """Hook for jets.detect_jet_tones (remove-doppler-e7); no-op until it lands."""
+    try:
+        from .jets import detect_jet_tones
+    except ImportError:
+        return []
+    group=max((q.group for q in tracks),default=-1)+1;out=[]
+    for q in detect_jet_tones(x,sr,cfg):
+        if q.kind=='doppler' and _covered(q,tracks+out)>=.8:continue
+        q.group=group;group+=1;out.append(q)
+    return out
 
 
 def _steep_cores(x,sr,cfg,tracks):
