@@ -23,6 +23,8 @@ def test_fast_sweep_core_is_tracked_and_dechirp_refined():
     assert np.median(np.diff(q.t)) <= .07
     err = q.f - (900 - 300 * np.tanh((q.t - 10) / 2.5))
     assert np.median(abs(err)) < 1.5
+    # a pure tone needs only the default corridor
+    assert q.width_hz is not None and q.width_hz <= 2.5
 
 
 def test_oscillating_pitch_and_noise_are_rejected():
@@ -39,3 +41,10 @@ def test_steady_and_slow_lines_are_left_to_the_main_detector():
     sr = 8000; dur = 30.; t = np.arange(int(sr * dur)) / sr
     x = _noise(sr, dur) + .05 * np.sin(2 * np.pi * 440 * t) + .05 * _tone(sr, 300 - .5 * t)
     assert detect_chirps(x, sr) == []
+
+
+def test_track_width_round_trips():
+    from dopplerscrub.types import Track
+    q = Track(np.arange(3.), np.ones(3), np.zeros(3), width_hz=6.5)
+    assert Track.from_dict(q.to_dict()).width_hz == 6.5
+    assert Track.from_dict({"t": [0, 1], "f": [1, 1]}).width_hz is None

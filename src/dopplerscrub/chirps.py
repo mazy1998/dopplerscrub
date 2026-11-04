@@ -162,6 +162,32 @@ def _accept(p, C, t, f, min_dur, min_rate):
     return grid, smooth, float(np.median(on)), float(z)
 
 
+def _spread90(P, ff, radii):
+    """Per-frame radius holding 90 % of the excess power (flank floor removed)."""
+    floor = np.median(P[(np.abs(ff) >= 20.) & (np.abs(ff) <= 30.)], axis=0)
+    excess = np.array([np.maximum(P[np.abs(ff) <= r] - floor, 0).sum(0) for r in radii])
+    return radii[np.argmax(excess >= .9 * np.maximum(excess[-1], 1e-30), axis=0)]
+
+
+def _intrinsic_halfwidth(z, rate, lock, win=.5):
+    """Tone half-width (Hz) after dechirping: the 90 %-energy radius in 0.5 s
+    baseband windows, with the window's own pure-tone spread removed in
+    quadrature. Floors at the remover default (2 Hz)."""
+    n = int(win * rate); step = max(1, int(HOP * rate))
+    ff, tt, Z = signal.stft(z, rate, window='hann', nperseg=n, noverlap=n - step, nfft=max(n, 4096),
+                            return_onesided=False, boundary=None, padded=False)
+    radii = np.arange(.5, 15.25, .25)
+    r = _spread90(np.abs(Z) ** 2, ff, radii)
+    tone = np.exp(2j * np.pi * .0 * np.arange(4 * n) / rate)
+    _, _, Zt = signal.stft(tone, rate, window='hann', nperseg=n, noverlap=n - step, nfft=max(n, 4096),
+                           return_onesided=False, boundary=None, padded=False)
+    r0 = float(np.median(_spread90(np.abs(Zt) ** 2 + 1e-30, ff, radii)))
+    good = np.interp(np.arange(len(r)), np.linspace(0, len(r) - 1, len(lock)), lock) > .2
+    if not good.any():
+        return float('nan')
+    return float(max(2., np.sqrt(max(np.median(r[good]) ** 2 - r0 ** 2, 0.))))
+
+
 def refine_dechirp(y, rate, t, f, iterations=4, spans=(25., 12., 6., 4.), win=.25):
     """Iteratively re-centre f(t) on the tone: heterodyne along the current
     curve, read the residual frequency offset in short baseband windows,
@@ -172,7 +198,7 @@ def refine_dechirp(y, rate, t, f, iterations=4, spans=(25., 12., 6., 4.), win=.2
     t = np.asarray(t, float); f = np.asarray(f, float).copy()
     a = max(0, int((t[0] - .5) * rate)); b = min(len(y), int((t[-1] + .5) * rate))
     if b - a < int(2 * win * rate) or len(t) < 4:
-        return f, np.zeros(len(t))
+        return f, np.zeros(len(t)), float('nan')
     ts = np.arange(a, b) / rate
     n = int(win * rate); step = max(1, int(HOP * rate / 2))
     for it in range(iterations):
@@ -204,7 +230,8 @@ def refine_dechirp(y, rate, t, f, iterations=4, spans=(25., 12., 6., 4.), win=.2
                             return_onesided=False, boundary=None, padded=False)
     P = np.abs(Z) ** 2; near = np.abs(ff) <= 3.; wide = np.abs(ff) <= 30.
     q = P[near].sum(0) / np.maximum(P[wide].sum(0), 1e-30)
-    return f, np.interp(t, tt + ts[0], q)
+    half = _intrinsic_halfwidth(z, rate, q)
+    return f, np.interp(t, tt + ts[0], q), half
 
 
 def detect_chirps(x, sr, cfg: DetectConfig = DetectConfig(), fmin=150., min_dur=3., min_rate=12., thr=5.):
@@ -234,8 +261,10 @@ def detect_chirps(x, sr, cfg: DetectConfig = DetectConfig(), fmin=150., min_dur=
             grid, ff, contrast, z = r
             # 1/16 s samples: a 0.25 s grid cannot carry a 150 Hz/s curve to
             # the remover's +-3 Hz envelope band, even when every sample is exact
-            ff, quality = refine_dechirp(y, rate, grid, ff)
+            ff, quality, half = refine_dechirp(y, rate, grid, ff)
             tr = Track(grid.copy(), ff, np.zeros(len(grid)), .8, None, 1, -1, 'doppler')
+            if np.isfinite(half):
+                tr.width_hz = float(np.clip(half, 1., 12.))
             tr._chirp = dict(contrast=contrast, z=z, locked=float(np.median(quality)))
             out.append(tr)
     # chunk overlaps: drop duplicates
