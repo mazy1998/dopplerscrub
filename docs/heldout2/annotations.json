@@ -1,0 +1,276 @@
+{
+ "method": "blind: metadata + broadband loudness envelope only; no spectrograms, listening, or dopplerscrub runs",
+ "clips": [
+  {
+   "name": "c150_lowpass",
+   "url": "https://www.youtube.com/watch?v=ncgTszJDc4I",
+   "title": "Low Pass C150M @SCCV",
+   "uploader": "Alejandro Gorigoitia",
+   "source_type": "light piston single (Cessna 150) runway low pass",
+   "source_start_s": 0,
+   "source_end_s": 82.8,
+   "path": "data/real/heldout2/c150_lowpass.wav",
+   "sr": 48000,
+   "channels": 2,
+   "duration_s": 82.8,
+   "sha256": "c897d844f1f5d378df794e8ddffbe5990b9a0ed2bac1d7c11a6bffd9d630c0f1",
+   "status": "blind: never viewed, listened to, or processed",
+   "loudness_peak_source_s": 79.7,
+   "events": [
+    {
+     "start_s": 0,
+     "end_s": 82.8,
+     "fmin_hz": 40,
+     "fmax_hz": 2000,
+     "source_type": "light piston single (Cessna 150) runway low pass",
+     "clean_sweep": null,
+     "notes": "loudness-envelope window; not spectrogram-verified"
+    }
+   ]
+  },
+  {
+   "name": "cub_lowpass",
+   "url": "https://www.youtube.com/watch?v=BBz6tzSoCnI",
+   "title": "AVX RUNWAY PROJECT- JERRY’S CUB LOW PASS",
+   "uploader": "Jerry Rootlieb",
+   "source_type": "Piper Cub low pass at a private strip",
+   "source_start_s": 0,
+   "source_end_s": 70.7,
+   "path": "data/real/heldout2/cub_lowpass.wav",
+   "sr": 48000,
+   "channels": 2,
+   "duration_s": 70.682,
+   "sha256": "dfc8501d9726f12972fcff213dc28f4ce73882ee7d1cc1c44b9a5baed1ae49ff",
+   "status": "blind: never viewed, listened to, or processed",
+   "loudness_peak_source_s": 13.4,
+   "events": [
+    {
+     "start_s": 0,
+     "end_s": 70.7,
+     "fmin_hz": 40,
+     "fmax_hz": 2000,
+     "source_type": "Piper Cub low pass at a private strip",
+     "clean_sweep": null,
+     "notes": "loudness-envelope window; not spectrogram-verified"
+    }
+   ]
+  },
+  {
+   "name": "kingair_b350",
+   "url": "https://www.youtube.com/watch?v=BzUlY8YzarI",
+   "title": "[4K] Raytheon/Beechcraft B350 King Air Flyby",
+   "uploader": "HD Aviation Films",
+   "source_type": "twin turboprop (King Air B350) flyby",
+   "source_start_s": 0,
+   "source_end_s": 21.5,
+   "path": "data/real/heldout2/kingair_b350.wav",
+   "sr": 48000,
+   "channels": 2,
+   "duration_s": 21.5,
+   "sha256": "a5eda37879611ebec3ffbeb0087012d26b7dab2c8b8d52569ed4b69b3b93307b",
+   "status": "blind: never viewed, listened to, or processed",
+   "loudness_peak_source_s": 13.2,
+   "events": [
+    {
+     "start_s": 0,
+     "end_s": 17.5,
+     "fmin_hz": 40,
+     "fmax_hz": 2000,
+     "source_type": "twin turboprop (King Air B350) flyby",
+     "clean_sweep": null,
+     "notes": "loudness-envelope window; not spectrogram-verified"
+    }
+   ]
+  },
+  {
+   "name": "pc12_lowpass",
+   "url": "https://www.youtube.com/watch?v=x1-21YrfPHA",
+   "title": "Pilatus PC-12 NG SP-THC LOW PASS RUNWAY 29 EPKR",
+   "uploader": "Pavlo EPKR",
+   "source_type": "single turboprop (Pilatus PC-12) runway low pass",
+   "source_start_s": 3.0,
+   "source_end_s": 24.5,
+   "path": "data/real/heldout2/pc12_lowpass.wav",
+   "sr": 48000,
+   "channels": 2,
+   "duration_s": 21.462,
+   "sha256": "c703646cc015e19d2516e28cf499e73c6da041e5ca3410b964c01f589baedb99",
+   "status": "blind: never viewed, listened to, or processed",
+   "loudness_peak_source_s": 18.4,
+   "events": [
+    {
+     "start_s": 11.2,
+     "end_s": 19.2,
+     "fmin_hz": 40,
+     "fmax_hz": 2000,
+     "source_type": "single turboprop (Pilatus PC-12) runway low pass",
+     "clean_sweep": null,
+     "notes": "loudness-envelope window; not spectrogram-verified"
+    }
+   ]
+  },
+  {
+   "name": "r44_flyby",
+   "url": "https://www.youtube.com/watch?v=2kNkgbfep58",
+   "title": "Robison R44 Raven II Helicopter Fly By",
+   "uploader": "Metra Force",
+   "source_type": "light piston helicopter (Robinson R44) flyby",
+   "source_start_s": 0,
+   "source_end_s": 40.6,
+   "path": "data/real/heldout2/r44_flyby.wav",
+   "sr": 48000,
+   "channels": 2,
+   "duration_s": 40.589,
+   "sha256": "d84bb251292317ad5f25205d43262fe9c58be35ea2d6f9064ca1f6522525a28d",
+   "status": "blind: never viewed, listened to, or processed",
+   "loudness_peak_source_s": 22.8,
+   "events": [
+    {
+     "start_s": 18.7,
+     "end_s": 40.6,
+     "fmin_hz": 40,
+     "fmax_hz": 2000,
+     "source_type": "light piston helicopter (Robinson R44) flyby",
+     "clean_sweep": null,
+     "notes": "loudness-envelope window; not spectrogram-verified"
+    }
+   ]
+  },
+  {
+   "name": "bell407_house",
+   "url": "https://www.youtube.com/watch?v=7ebJM2kKpjA",
+   "title": "Low flying Bell 407 (N765MT) over my house",
+   "uploader": "Planes cars and weather",
+   "source_type": "turbine helicopter (Bell 407) low over a house",
+   "source_start_s": 0,
+   "source_end_s": 30.6,
+   "path": "data/real/heldout2/bell407_house.wav",
+   "sr": 48000,
+   "channels": 2,
+   "duration_s": 30.6,
+   "sha256": "bd39715e13c2bdd7c8aa4bf16d700342005f83665e87c1cf67e307b136f5652c",
+   "status": "blind: never viewed, listened to, or processed",
+   "loudness_peak_source_s": 12.4,
+   "events": [
+    {
+     "start_s": 0,
+     "end_s": 24.2,
+     "fmin_hz": 40,
+     "fmax_hz": 2000,
+     "source_type": "turbine helicopter (Bell 407) low over a house",
+     "clean_sweep": null,
+     "notes": "loudness-envelope window; not spectrogram-verified"
+    }
+   ]
+  },
+  {
+   "name": "train_horn",
+   "url": "https://www.youtube.com/watch?v=3dzV8QCWJnk",
+   "title": "BNSF 7102 P5 Train Horn At 70 MPH (Amazing Doppler Effect)",
+   "uploader": "UPking",
+   "source_type": "locomotive horn at 70 mph (tonal, non-engine)",
+   "source_start_s": 0,
+   "source_end_s": 25.1,
+   "path": "data/real/heldout2/train_horn.wav",
+   "sr": 48000,
+   "channels": 2,
+   "duration_s": 25.1,
+   "sha256": "5ea5e9bb621f2a9cb32568007d1ba9fd63455cdbe1ea353e757814b49a660535",
+   "status": "blind: never viewed, listened to, or processed",
+   "loudness_peak_source_s": 18.0,
+   "events": [
+    {
+     "start_s": 12.7,
+     "end_s": 25.1,
+     "fmin_hz": 40,
+     "fmax_hz": 2000,
+     "source_type": "locomotive horn at 70 mph (tonal, non-engine)",
+     "clean_sweep": null,
+     "notes": "loudness-envelope window; not spectrogram-verified"
+    }
+   ]
+  },
+  {
+   "name": "fire_siren",
+   "url": "https://www.youtube.com/watch?v=imoxDcn2Sgo",
+   "title": "Fire Engine Siren Demonstrates The Doppler Effect",
+   "uploader": "davidrobert2007",
+   "source_type": "fire engine siren pass at speed (road vehicle, tonal siren)",
+   "source_start_s": 0,
+   "source_end_s": 18.7,
+   "path": "data/real/heldout2/fire_siren.wav",
+   "sr": 48000,
+   "channels": 2,
+   "duration_s": 18.7,
+   "sha256": "350a66d8e1e6c219be87c1dab6742fcfc714cf3aac7e43098cc8da7f4933e44f",
+   "status": "blind: never viewed, listened to, or processed",
+   "loudness_peak_source_s": 0.0,
+   "events": [
+    {
+     "start_s": 0,
+     "end_s": 18.7,
+     "fmin_hz": 40,
+     "fmax_hz": 2000,
+     "source_type": "fire engine siren pass at speed (road vehicle, tonal siren)",
+     "clean_sweep": null,
+     "notes": "loudness-envelope window; not spectrogram-verified"
+    }
+   ]
+  },
+  {
+   "name": "tt_motorcycle",
+   "url": "https://www.youtube.com/watch?v=_hf__rO7MD8",
+   "title": "Isle of Man TT - original first time spectator reaction",
+   "uploader": "Big Sky films",
+   "source_type": "road-race motorcycle pass with spectator reaction (speech likely, unverified)",
+   "source_start_s": 0,
+   "source_end_s": 15.0,
+   "path": "data/real/heldout2/tt_motorcycle.wav",
+   "sr": 48000,
+   "channels": 2,
+   "duration_s": 15.0,
+   "sha256": "30ba014c6d888e9d135ca29a5c70b813ccbf7aabebf780198df7565557c57784",
+   "status": "blind: never viewed, listened to, or processed",
+   "loudness_peak_source_s": 4.4,
+   "events": [
+    {
+     "start_s": 1.2,
+     "end_s": 15.0,
+     "fmin_hz": 40,
+     "fmax_hz": 2000,
+     "source_type": "road-race motorcycle pass with spectator reaction (speech likely, unverified)",
+     "clean_sweep": null,
+     "notes": "loudness-envelope window; not spectrogram-verified"
+    }
+   ]
+  },
+  {
+   "name": "rally_car",
+   "url": "https://www.youtube.com/watch?v=JqwYExVlXek",
+   "title": "Rally monte Carlo 2022.  Sebastian Loeb flat out",
+   "uploader": "Jose wa Liz💕",
+   "source_type": "rally car flat-out pass (road vehicle)",
+   "source_start_s": 0.5,
+   "source_end_s": 23.7,
+   "path": "data/real/heldout2/rally_car.wav",
+   "sr": 48000,
+   "channels": 2,
+   "duration_s": 23.196,
+   "sha256": "40b304f02f6455c1d5113e39a7d6885898341c2f4373ff9e983e2bfb617ca381",
+   "status": "blind: never viewed, listened to, or processed",
+   "loudness_peak_source_s": 13.4,
+   "events": [
+    {
+     "start_s": 8.0,
+     "end_s": 16.8,
+     "fmin_hz": 40,
+     "fmax_hz": 2000,
+     "source_type": "rally car flat-out pass (road vehicle)",
+     "clean_sweep": null,
+     "notes": "loudness-envelope window; not spectrogram-verified"
+    }
+   ]
+  }
+ ],
+ "rejected": []
+}

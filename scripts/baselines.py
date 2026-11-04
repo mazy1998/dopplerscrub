@@ -15,7 +15,8 @@ after viewing the PNGs; --md-only re-renders the markdown from the JSON.
 Usage:
   uv run python scripts/baselines.py                       # synth + 2 real dev clips
   uv run python scripts/baselines.py --only speech prop_pass --methods bandstop jitter
-  uv run python scripts/baselines.py --split heldout       # data/real/heldout (later)
+  uv run python scripts/baselines.py --split heldout       # data/real/heldout (burned)
+  uv run python scripts/baselines.py --split heldout2 --blind  # fresh blind set; no numbers on stdout
   uv run python scripts/baselines.py --md-only
 """
 from __future__ import annotations
@@ -75,10 +76,10 @@ def dev_clips():
     return [c for c in out if Path(c["path"]).exists()]
 
 
-def heldout():
+def heldout(which: str = "heldout"):
     import benchmark as bm
-    return [{"name": c["name"], "path": c["path"], "split": "heldout", "set": "heldout", "true": None,
-             "boxes": c["boxes"]} for c in bm.heldout_clips()]
+    return [{"name": c["name"], "path": c["path"], "split": which, "set": which, "true": None,
+             "boxes": c["boxes"]} for c in bm.heldout_clips(which)]
 
 
 # ------------------------------------------------------------------ run methods
@@ -270,6 +271,14 @@ def write_md(rows, verdicts):
     T, vis_h = summary_table(rows, "heldout")
     L += T
     visible = visible | vis_h
+    if any(r["split"] == "heldout2" for r in rows):
+        L += ["## Method × metric (medians), held-out 2 (fresh blind set)", "",
+              "data/real/heldout2: collected after the first held-out set was burned; clips and event "
+              "boxes chosen from metadata and a broadband loudness envelope only (see its SOURCES.md). "
+              "Same caveats as held-out.", ""]
+        T, vis_h2 = summary_table(rows, "heldout2")
+        L += T
+        visible = visible | vis_h2
     L += ["", "Reference (no processing): exact contrast and ridge excess of the ORIGINAL, median over "
           f"visible synthetic clips: {fnum(med([r.get('contrast_orig_db') for r in by_m['bandstop'] if r['clip'] in visible and 'contrast_orig_db' in r]))} dB / "
           f"{fnum(med([r.get('ridge_excess_orig_db') for r in by_m['bandstop'] if r['clip'] in visible]))} dB; "
@@ -339,7 +348,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", nargs="*")
     ap.add_argument("--methods", nargs="*", default=METHODS)
-    ap.add_argument("--split", choices=("dev", "heldout"), default="dev")
+    ap.add_argument("--split", choices=("dev", "heldout", "heldout2"), default="dev")
+    ap.add_argument("--blind", action="store_true", help="print no numbers (judge images first)")
     ap.add_argument("--force", action="store_true", help="recompute cached method outputs")
     ap.add_argument("--md-only", action="store_true")
     a = ap.parse_args(argv)
@@ -351,7 +361,7 @@ def main(argv=None):
     if a.md_only:
         write_md(rows, verdicts)
         return
-    clips = dev_clips() if a.split == "dev" else heldout()
+    clips = dev_clips() if a.split == "dev" else heldout(a.split)
     if a.only:
         clips = [c for c in clips if c["name"] in a.only]
     for c in clips:
@@ -375,9 +385,9 @@ def main(argv=None):
                 tb = [t for t in c["true"] if np.nanmedian(t.f) <= ev.FMAX and np.nanmax(t.f) >= ev.FMIN]
                 r["contrast_orig_db"] = ev.track_contrast_db(v_orig, tb)
             new.append(r)
-            print(f"   {m:12s} {rt:6.1f}s  " + "  ".join(
+            print(f"   {m:12s} {rt:6.1f}s  " + ("" if a.blind else "  ".join(
                 f"{k}={fnum(r.get(k), 2)}" for k in ("af_z", "ridge_excess_db", "box_hi", "snr_outside_db",
-                                                     "lsd_db", "stoi_like", "tf_mod_all")), flush=True)
+                                                     "lsd_db", "stoi_like", "tf_mod_all"))), flush=True)
         render(c, views, IMG / f"bl_{c['name']}.png")
         rows = [r for r in rows if not (r["clip"] == c["name"] and r["method"] in {n["method"] for n in new})] + new
         jpath.write_text(json.dumps(rows, indent=1, default=float))

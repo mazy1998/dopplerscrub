@@ -16,6 +16,7 @@ Usage:
   uv run python scripts/benchmark.py --no-colsto     # skip the 1-hour clip
   uv run python scripts/benchmark.py --md-only
   uv run python scripts/benchmark.py --split heldout --blind   # no numbers on stdout
+  uv run python scripts/benchmark.py --split heldout2 --blind  # fresh blind set (data/real/heldout2)
   uv run python scripts/benchmark.py --boxfree-from .cache/bench_dev  # add box-free checks
 """
 from __future__ import annotations
@@ -250,15 +251,20 @@ def airshow_clips():
 
 
 HELDOUT_DIR = ROOT / "data" / "real" / "heldout"
+HELDOUT2_DIR = ROOT / "data" / "real" / "heldout2"
+# set name -> (directory, clip-name prefix). heldout is burned (results seen during
+# development); heldout2 is the fresh blind set collected afterwards.
+HELDOUT_SETS = {"heldout": (HELDOUT_DIR, "ho_"), "heldout2": (HELDOUT2_DIR, "h2_")}
 
 
-def heldout_clips():
-    """Held-out real clips (never used for tuning). data/real/heldout/annotations.json in
+def heldout_clips(which: str = "heldout"):
+    """Held-out real clips (never used for tuning). <dir>/annotations.json in
     the airshow format ({"clips": [{"name", "path", "events": [{start_s, end_s, fmin_hz,
     fmax_hz}]}]}) if present, else every audio file there (no event boxes)."""
-    if not HELDOUT_DIR.exists():
+    hdir, prefix = HELDOUT_SETS[which]
+    if not hdir.exists():
         return []
-    ann = HELDOUT_DIR / "annotations.json"
+    ann = hdir / "annotations.json"
     out, seen = [], set()
     if ann.exists():
         for c in json.loads(ann.read_text()).get("clips", []):
@@ -267,21 +273,21 @@ def heldout_clips():
                 continue
             boxes = [(e["start_s"], e["end_s"], max(40.0, e["fmin_hz"]), min(AIRSHOW_FMAX, e["fmax_hz"]))
                      for e in c.get("events", [])]
-            out.append({"name": f"ho_{c.get('name', path.stem)}", "path": path, "true": None,
-                        "wide": True, "set": "heldout", "boxes": boxes})
+            out.append({"name": f"{prefix}{c.get('name', path.stem)}", "path": path, "true": None,
+                        "wide": True, "set": which, "boxes": boxes})
             seen.add(path.resolve())
-    for p in sorted(HELDOUT_DIR.iterdir()):
+    for p in sorted(hdir.iterdir()):
         if p.suffix.lower() in (".wav", ".flac", ".mp3", ".m4a", ".mp4", ".mov", ".mkv", ".webm") \
                 and p.resolve() not in seen:
-            out.append({"name": f"ho_{p.stem}", "path": p, "true": None, "wide": True,
-                        "set": "heldout", "boxes": []})
+            out.append({"name": f"{prefix}{p.stem}", "path": p, "true": None, "wide": True,
+                        "set": which, "boxes": []})
     return out
 
 
 def clip_split(c) -> str:
     """'dev' = everything used during development/tuning (synth, data/real, airshow, colsto);
-    'heldout' = data/real/heldout only."""
-    return "heldout" if c["set"] == "heldout" else "dev"
+    'heldout' = data/real/heldout only; 'heldout2' = data/real/heldout2 only."""
+    return c["set"] if c["set"] in HELDOUT_SETS else "dev"
 
 
 # ------------------------------------------------------------------ markdown
@@ -365,7 +371,7 @@ def write_md(rows, verdicts):
 
 def add_boxfree(rows, workdir, only=None):
     """Box-free checks for rows whose cleaned WAV is in workdir (<clip>_clean.wav)."""
-    allc = {c["name"]: c for c in real_clips() + airshow_clips() + heldout_clips()}
+    allc = {c["name"]: c for c in real_clips() + airshow_clips() + heldout_clips() + heldout_clips("heldout2")}
     for name, c in allc.items():
         if only and name not in only:
             continue
@@ -394,8 +400,9 @@ def main(argv=None):
     ap.add_argument("--no-colsto", action="store_true")
     ap.add_argument("--no-real", action="store_true")
     ap.add_argument("--no-airshow", action="store_true")
-    ap.add_argument("--split", choices=("dev", "heldout", "all"), default="dev",
-                    help="dev = all clips used for tuning (default); heldout = data/real/heldout")
+    ap.add_argument("--split", choices=("dev", "heldout", "heldout2", "all"), default="dev",
+                    help="dev = all clips used for tuning (default); heldout = data/real/heldout "
+                         "(burned); heldout2 = data/real/heldout2 (fresh blind set); all = all three")
     ap.add_argument("--md-only", action="store_true")
     ap.add_argument("--blind", action="store_true", help="print no numbers (judge images first)")
     ap.add_argument("--boxfree-from", default=None,
@@ -409,7 +416,7 @@ def main(argv=None):
     verdicts = json.loads(vpath.read_text()) if vpath.exists() else {}
     prev = {r["clip"]: r for r in json.loads(jpath.read_text())} if jpath.exists() else {}
     for r in prev.values():   # rows from before the split existed were all dev/tuning clips
-        r.setdefault("split", "heldout" if r.get("set") == "heldout" else "dev")
+        r.setdefault("split", r.get("set") if r.get("set") in HELDOUT_SETS else "dev")
     if a.md_only:
         write_md(list(prev.values()), verdicts)
         return
@@ -421,7 +428,8 @@ def main(argv=None):
 
     dev = (synth_clips() + ([] if a.no_real else real_clips(a.no_colsto))
            + ([] if a.no_airshow else airshow_clips()))
-    clips = {"dev": dev, "heldout": heldout_clips(), "all": dev + heldout_clips()}[a.split]
+    clips = {"dev": dev, "heldout": heldout_clips(), "heldout2": heldout_clips("heldout2"),
+             "all": dev + heldout_clips() + heldout_clips("heldout2")}[a.split]
     if a.only:
         clips = [c for c in clips if c["name"] in a.only]
     work = Path(a.workdir or tempfile.mkdtemp(prefix="dsbench_"))
@@ -459,7 +467,7 @@ def main(argv=None):
                              [Track(t.t - w[0], t.f, t.amp, kind=t.kind) for t in loc])
                 r.update(base, **mm); r["runtime_s"] = float("nan")
                 rows[r["clip"]] = r
-        elif c["set"] in ("airshow", "heldout"):
+        elif c["set"] in ("airshow", *HELDOUT_SETS):
             m = metrics(x, y, sr, None, det)
             r = evaluate_clip(c["name"], x, y, sr, None, det, fmax=AIRSHOW_FMAX, boxes=c["boxes"] or None)
             r.update(base, **m); r["boxfree"] = bf.boxfree(x, y, sr); rows[r["clip"]] = r
