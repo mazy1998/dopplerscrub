@@ -188,7 +188,7 @@ def _intrinsic_halfwidth(z, rate, lock, win=.5):
     return float(max(2., np.sqrt(max(np.median(r[good]) ** 2 - r0 ** 2, 0.))))
 
 
-def refine_dechirp(y, rate, t, f, iterations=4, spans=(25., 12., 6., 4.), win=.25):
+def refine_dechirp(y, rate, t, f, iterations=3, spans=(25., 10., 5.), win=.25):
     """Iteratively re-centre f(t) on the tone: heterodyne along the current
     curve, read the residual frequency offset in short baseband windows,
     smooth it in time and fold it back. A sweep of 150 Hz/s smears across
@@ -200,7 +200,7 @@ def refine_dechirp(y, rate, t, f, iterations=4, spans=(25., 12., 6., 4.), win=.2
     if b - a < int(2 * win * rate) or len(t) < 4:
         return f, np.zeros(len(t)), float('nan')
     ts = np.arange(a, b) / rate
-    n = int(win * rate); step = max(1, int(HOP * rate / 2))
+    n = int(win * rate); step = max(1, int(HOP * rate))
     for it in range(iterations):
         fi = CubicSpline(t, f)(np.clip(ts, t[0], t[-1]))
         fi[ts < t[0]] = f[0]; fi[ts > t[-1]] = f[-1]

@@ -1062,11 +1062,15 @@ def detect_tracks(x,sr,cfg=DetectConfig()) -> list[Track]:
                 nearby=np.array([_sample(original,f,ff+delta) for delta in shifts])
                 residual=shifts[np.argmax(nearby,axis=0)]
                 measured=valid & (_sample(original,f,ff)>3)
+                # Only harmonics with measured support become removal targets;
+                # unobserved orders are still CLEANed from the search below.
+                emit=k==1 or ndimage.uniform_filter1d(measured.astype(float),16,mode='nearest').max()>=.75
                 rms=float(np.sqrt(np.mean(residual[measured]**2))) if measured.any() else None
                 fit=dict(zip(('f0','v','d_cpa','t_cpa'),map(float,p*np.array([k,1,1,1]))),rms_hz=rms)
                 tr=Track(grid,freq,amplitudes,min(.99,.5+score/20),fit,harmonic,source['group'],'doppler')
                 old=source['tracks'].get(harmonic)
-                if old is not None:
+                if not emit:pass
+                elif old is not None:
                     all_t=np.r_[old.t,tr.t];order=np.argsort(all_t,kind='stable')
                     unique,ix=np.unique(all_t[order],return_index=True)
                     old.f=np.r_[old.f,tr.f][order][ix];old.amp=np.r_[old.amp,tr.amp][order][ix];old.t=unique
@@ -1357,6 +1361,8 @@ def detect_tracks(x,sr,cfg=DetectConfig()) -> list[Track]:
         if q.kind=='doppler':q.doppler_score=max(cfg.doppler_threshold,q.doppler_score)
         kept.append(q)
     kept.extend(_steep_cores(x,sr,cfg,kept))
+    from .families import apply_families
+    kept=apply_families(kept,t,f,s,amp,cfg)
     return sorted(kept,key=lambda q:(q.group,q.harmonic,q.t0))
 
 
