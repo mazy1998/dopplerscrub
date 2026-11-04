@@ -307,6 +307,23 @@ def _continue(C, t, f, grid, ff, floor=7., max_s=12.):
     return tt, fq
 
 
+def _split_at_kinks(p, jump=6.):
+    """A path that fails as a whole may join two sweeps across a kink (a step
+    in engine power, a short dropout). Split where a frame-to-frame step departs
+    from the local step trend by >= `jump` Hz, so each piece is judged alone."""
+    ff = np.asarray(p['f']); j = np.asarray(p['j'])
+    if len(ff) < 8:
+        return []
+    step = np.diff(ff) / np.maximum(np.diff(j), 1)
+    trend = ndimage.median_filter(step, 9, mode='nearest')
+    cuts = np.flatnonzero(abs(step - trend) >= jump) + 1
+    out = []
+    for part in np.split(np.arange(len(ff)), cuts):
+        if len(part) >= 16:
+            out.append({k: [p[k][i] for i in part] for k in ('j', 'f', 'c', 's')})
+    return out if len(out) > 1 else []
+
+
 def detect_chirps(x, sr, cfg: DetectConfig = DetectConfig(), fmin=150., min_dur=3., min_rate=12., thr=5.):
     """Steep, smooth single-tone sweeps as 'doppler' Tracks on a 0.25 s grid."""
     x = np.asarray(x, np.float64)
@@ -327,20 +344,22 @@ def detect_chirps(x, sr, cfg: DetectConfig = DetectConfig(), fmin=150., min_dur=
         t = t + s0
         C = np.max(views, axis=0)
         A, S = _oriented(C, f[1] - f[0])
-        for p in _track(A, S, t, f, thr):
-            r = _accept(p, C, t, f, min_dur, min_rate)
-            if r is None:
-                continue
-            grid, ff, contrast, z = r
-            # 1/16 s samples: a 0.25 s grid cannot carry a 150 Hz/s curve to
-            # the remover's +-3 Hz envelope band, even when every sample is exact
-            grid, ff = _continue(C, t, f, grid, ff)
-            ff, quality, half = refine_dechirp(y, rate, grid, ff)
-            tr = Track(grid.copy(), ff, np.zeros(len(grid)), .8, None, 1, -1, 'doppler')
-            if np.isfinite(half):
-                tr.width_hz = float(np.clip(half, 1., 12.))
-            tr._chirp = dict(contrast=contrast, z=z, locked=float(np.median(quality)))
-            out.append(tr)
+        for whole in _track(A, S, t, f, thr):
+            pieces = [whole] if _accept(whole, C, t, f, min_dur, min_rate) else _split_at_kinks(whole)
+            for p in pieces:
+                r = _accept(p, C, t, f, min_dur, min_rate)
+                if r is None:
+                    continue
+                grid, ff, contrast, z = r
+                # 1/16 s samples: a 0.25 s grid cannot carry a 150 Hz/s curve to
+                # the remover's +-3 Hz envelope band, even when every sample is exact
+                grid, ff = _continue(C, t, f, grid, ff)
+                ff, quality, half = refine_dechirp(y, rate, grid, ff)
+                tr = Track(grid.copy(), ff, np.zeros(len(grid)), .8, None, 1, -1, 'doppler')
+                if np.isfinite(half):
+                    tr.width_hz = float(np.clip(half, 1., 12.))
+                tr._chirp = dict(contrast=contrast, z=z, locked=float(np.median(quality)))
+                out.append(tr)
     # chunk overlaps: drop duplicates
     out.sort(key=lambda q: -(q.t1 - q.t0))
     kept = []

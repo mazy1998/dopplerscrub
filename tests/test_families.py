@@ -50,3 +50,20 @@ def test_no_evidence_no_new_tracks(seed):
     assert len(clusters(given)) == 1
     out = apply_families(given, t, f, s, amp, cfg)
     assert len(out) == 2
+
+
+def test_machinery_drift_is_not_expanded_into_a_family():
+    """Generator harmonics drift together (constant ratio) but barely move."""
+    sr, dur = 4000, 60.
+    t = np.arange(int(sr * dur)) / sr
+    f0 = 30 * (1 + .008 * np.sin(2 * np.pi * t / 20))
+    x = np.random.default_rng(3).normal(0, .05, len(t))
+    for k in range(3, 9):
+        x += .02 * np.sin(k * 2 * np.pi * np.cumsum(f0) / sr)
+    cfg = DetectConfig()
+    tt, f, amp, s = _spectrogram(x, sr, cfg)
+    g = np.arange(5, 55, .25)
+    given = [Track(g, k * 30 * (1 + .008 * np.sin(2 * np.pi * g / 20)), np.zeros(len(g)), .85, None, 1, k, 'doppler')
+             for k in (4, 6)]
+    out = apply_families(given, tt, f, s, amp, cfg)
+    assert len(out) == 2

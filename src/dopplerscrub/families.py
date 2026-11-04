@@ -27,6 +27,9 @@ from scipy import ndimage
 from .types import Track
 
 
+MIN_EXCURSION = .03   # robust (5-95 %) relative excursion of the measured factor
+
+
 def _grid(q):
     return np.round(np.asarray(q.t) * 4) / 4
 
@@ -326,6 +329,13 @@ def apply_families(tracks, t, f, s, amp, cfg):
         else:
             F = shared_factor(tracks, members, [n + fam['eps'] for n in orders], t)
             measured_span[id(fam)] = np.isfinite(F)
+            # Expand only a factor that moves like a source in flight. Machinery
+            # whose harmonics drift together (a generator's ~1 % governor wander)
+            # also has a constant ratio, but nowhere near a pass's Doppler swing
+            # (2v/c: >= ~20 % for any fixed-wing speed).
+            Fm = F[np.isfinite(F)]
+            if len(Fm) < 16 or (np.percentile(Fm, 95) - np.percentile(Fm, 5)) / np.median(Fm) < MIN_EXCURSION:
+                continue
             F, _ = extend_factor(F, t)
         factors[id(fam)] = F
         span = measured_span.get(id(fam), measured_span.get(id(found[fam['parent']])) if fam['parent'] is not None else None)
