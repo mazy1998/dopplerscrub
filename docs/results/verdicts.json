@@ -30,5 +30,14 @@
  "air_p38": "FAIL: nothing detected; unchanged.",
  "colsto_full": "PASS for the flyovers / COLLATERAL: the descending sweeps (e.g. ~2150 s, ~3050 s) are gone in the hour view. But 4195 tracks were found (821 doppler) and the overlay is green almost everywhere; stepped and stationary engine tones were removed too (removed-content panel). Runtime 51 min for 1 h of audio. Speech SNR 17.6 dB.",
  "colsto_ev1": "PASS (curves) / COLLATERAL: the 180->85 Hz sweep and the 300->195 Hz harmonic are gone in stock and red-team views; AF z 49.6 -> -6.7, upper bound -12.5 dB, the first real window to meet the -10 dB target. But many FLAT stationary tones (~120, 150, 180, 250 Hz) were also removed (removed-content panel); speech SNR 9.4 dB in the window.",
- "colsto_ev2": "PARTIAL: the 175->110 Hz sweep is gone in the stock view, but views (b)/(d) show a broad darker (blue) patch over 3020-3110 s and 100-200 Hz where the fill sits below the surroundings, a 'something was removed here' signature (profile about -4 dB at all offsets). AF upper bound -3.5 dB (fails the target)."
+ "colsto_ev2": "PARTIAL: the 175->110 Hz sweep is gone in the stock view, but views (b)/(d) show a broad darker (blue) patch over 3020-3110 s and 100-200 Hz where the fill sits below the surroundings, a 'something was removed here' signature (profile about -4 dB at all offsets). AF upper bound -3.5 dB (fails the target).",
+ "ho_ambient_plane": "PARTIAL (blind): steep comb gone 500-1900 Hz; faint low-harmonic lines remain in the receding tail (55-88 s, 150-600 Hz). 40-450 Hz view: descending harmonics gone, faint ~110 Hz line at 5-15 s.",
+ "ho_atr72": "FAIL (blind): practically unchanged; ground-reflection U-fringe, ~800 Hz tone and ~1130 Hz line all visible. Fringe is outside the tonal model but encodes pass geometry.",
+ "ho_city_helicopter": "FAIL (blind): falling smears (road vehicles?) and 1450-1500 Hz lines remain; only thin low lines in the first 10 s reduced. Weak pass content to begin with.",
+ "ho_crop_duster": "PARTIAL (blind): 48 s pass hidden; the 36 s pass leaves bright short streaks at its steepest part (~500/1100/1600 Hz, 35-37 s).",
+ "ho_dash8": "PARTIAL (blind): main ~1180 Hz tone removed; falling 1100->900 Hz line, low 100-200 Hz curves and V-fringe remain.",
+ "ho_drone": "FAIL (blind): hovering harmonic stacks all still visible; largely non-pass content (outside the threat model).",
+ "ho_floatplane": "PARTIAL (blind HIDDEN, downgraded after the 40-450 Hz view): bending comb gone; thin faint flat lines remain in the approach (0-12 s). Some broadband collateral at 15-17 s.",
+ "ho_motorcycle": "FAIL (blind): drooping 500 Hz band and higher lines remain; only two thin tracks removed, +3 dB ghost on them.",
+ "ho_phone_plane": "PARTIAL leaning FAIL (blind): lines inside the pass thinned; the clearest early ~470/250 Hz lines and the 1500 Hz segment remain."
 }
