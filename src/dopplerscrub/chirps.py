@@ -234,6 +234,61 @@ def refine_dechirp(y, rate, t, f, iterations=3, spans=(25., 10., 5.), win=.25):
     return f, np.interp(t, tt + ts[0], q), half
 
 
+def _continue(C, t, f, grid, ff, floor=7., max_s=12.):
+    """Continuation of an accepted core along its own ridge in the contrast
+    view C (approach / recede plateaus): the slope relaxes toward a plateau and
+    the gate scales with it. The fused max-of-windows view sits near 4 dB on
+    noise, so the walk stops when the mean of the last 8 on-ridge values drops
+    below `floor`, and that weak tail is trimmed. Never a new birth."""
+    df = f[1] - f[0]
+    # the first/last samples of a path are its least reliable (turning hooks)
+    if len(grid) > 24:
+        grid, ff = grid[4:-4], ff[4:-4]
+    j0 = int(round((grid[0] - t[0]) / HOP)); j1 = int(round((grid[-1] - t[0]) / HOP))
+    n = min(8, len(ff) - 1)
+    ends = {}
+    for direction, j, fc, slope in ((-1, j0, ff[0], (ff[n] - ff[0]) / (n * HOP)),
+                                    (1, j1, ff[-1], (ff[-1] - ff[-1 - n]) / (n * HOP))):
+        pts = []; recent = []
+        for _ in range(int(max_s / HOP)):
+            j += direction
+            if j < 0 or j >= C.shape[1]:
+                break
+            slope *= .97
+            # a pass core can turn sharply at its ends (the pre-CPA hook):
+            # try the current, a flat and the reversed slope
+            best = None
+            for trial in (slope, 0., -slope):
+                pred = fc + trial * HOP * direction
+                tol = 6. + .05 * abs(trial)
+                lo = max(0, int((pred - tol - f[0]) / df)); hi = min(len(f), int((pred + tol - f[0]) / df) + 2)
+                if hi - lo < 2:
+                    continue
+                score = C[lo:hi, j] - 4. * abs(f[lo:hi] - pred) / tol
+                k = lo + int(np.argmax(score))
+                if best is None or score[k - lo] > best[0] + .5:
+                    best = (score[k - lo], k, trial, pred)
+            if best is None:
+                break
+            _, k, trial, pred = best; value = float(C[k, j])
+            if value >= floor:
+                slope = .7 * trial + .3 * (f[k] - fc) / (HOP * direction); fc = f[k]
+            else:
+                fc = pred
+            recent.append(value); pts.append((t[j], fc))
+            if len(recent) >= 8 and np.mean(recent[-8:]) < floor:
+                del pts[-8:]
+                break
+        ends[direction] = pts
+    before = ends[-1][::-1]; after = ends[1]
+    tt = np.r_[[p[0] for p in before], grid, [p[0] for p in after]]
+    fq = np.r_[[p[1] for p in before], ff, [p[1] for p in after]]
+    if len(tt) > len(grid):
+        sm = ndimage.median_filter(fq, 5, mode='nearest')
+        fq = np.where((tt < grid[0]) | (tt > grid[-1]), sm, fq)
+    return tt, fq
+
+
 def detect_chirps(x, sr, cfg: DetectConfig = DetectConfig(), fmin=150., min_dur=3., min_rate=12., thr=5.):
     """Steep, smooth single-tone sweeps as 'doppler' Tracks on a 0.25 s grid."""
     x = np.asarray(x, np.float64)
@@ -261,6 +316,7 @@ def detect_chirps(x, sr, cfg: DetectConfig = DetectConfig(), fmin=150., min_dur=
             grid, ff, contrast, z = r
             # 1/16 s samples: a 0.25 s grid cannot carry a 150 Hz/s curve to
             # the remover's +-3 Hz envelope band, even when every sample is exact
+            grid, ff = _continue(C, t, f, grid, ff)
             ff, quality, half = refine_dechirp(y, rate, grid, ff)
             tr = Track(grid.copy(), ff, np.zeros(len(grid)), .8, None, 1, -1, 'doppler')
             if np.isfinite(half):
