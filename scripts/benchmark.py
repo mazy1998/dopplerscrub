@@ -325,7 +325,9 @@ def af_cells(af):
 def bf_cells(b):
     if not b:
         return ["–", "–"]
-    return [f"{b['n_ridges_orig_z3']} → {b['n_still_z3']} ({b['n_new_z3']})",
+    split = (f"; created {b['n_new_created_z3']}, unmasked {b['n_new_unmasked_z3']}, seen {b['n_new_seen_z3']}"
+             if "n_new_created_z3" in b else "; split n/a")
+    return [f"{b['n_ridges_orig_z3']} → {b['n_still_z3']} ({b['n_new_z3']}{split})",
             f"{fnum(100 * b['persist_orig'])} → {fnum(100 * b['persist_clean'])}"]
 
 
@@ -334,12 +336,15 @@ def scope_tally(rows):
     L = ["## Headline (fixed-wing clips only)", "",
          "Scope is fixed-wing airplanes; clips marked *out of scope* (rotorcraft, drones, cars, "
          "motorcycles) are listed below but excluded here.", "",
-         "| split | clips with box-free check | ridges z>3 before | still z>3 | new z>3 |", "|---|---|---|---|---|"]
+         "| split | clips with box-free check | ridges z>3 before | still z>3 | new z>3 | of which created |",
+         "|---|---|---|---|---|---|"]
     for sp in ("dev", *HELDOUT_SETS):
         bs = [r["boxfree"] for r in rows if r.get("split", "dev") == sp and in_scope(r["clip"]) and r.get("boxfree")]
         if bs:
             L.append(f"| {sp} | {len(bs)} | {sum(b['n_ridges_orig_z3'] for b in bs)} | "
-                     f"{sum(b['n_still_z3'] for b in bs)} | {sum(b['n_new_z3'] for b in bs)} |")
+                     f"{sum(b['n_still_z3'] for b in bs)} | {sum(b['n_new_z3'] for b in bs)} | "
+                     + (str(sum(b['n_new_created_z3'] for b in bs)) if all('n_new_created_z3' in b for b in bs)
+                        else "n/a (re-run box-free)") + " |")
     return L + [""]
 
 
@@ -366,8 +371,10 @@ def write_md(rows, verdicts):
              "`scripts/boxfree.py`): a simple attacker-side ridge extractor (2 s smoothed view > 4 dB, "
              "≥ 6 s, sweeping ≥ 3 Hz) runs on the ORIGINAL 40–450 Hz view; **ridges z>3** = those an "
              "integrating attacker confirms, **still** = how many keep z>3 in the cleaned file, **(new)** = "
-             "z>3 ridges found only in the cleaned file (mostly leftover harmonics that were merged into a "
-             "larger component in the original, rarely artefacts). **persistent cells** = share of smoothed cells "
+             "z>3 ridges found only in the cleaned file, split into **created** (an artefact of the processing), "
+             "**unmasked** (original content inside the original's bright mask, separable once its neighbours "
+             "were removed, power not raised) and **seen** (already z>3 along the same curve in the original); "
+             "see docs/results/new_ridges.md. **persistent cells** = share of smoothed cells "
              "> 4 dB (white noise: 4.6%; 0 ridges).",
              "- **event-box p99**: 99th percentile of whitened dB inside the annotated event boxes "
              "(airshow, colsto); pure noise ≈ 7 dB, so → ~7 means the ridges are gone.",

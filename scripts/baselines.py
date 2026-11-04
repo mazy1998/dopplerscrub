@@ -144,7 +144,8 @@ def metrics(x, y, sr, clip, v_clean, v_orig):
     if not true:
         b = bf.boxfree(x, y, sr)
         m.update({"bf_z3_orig": b["n_ridges_orig_z3"], "bf_still_z3": b["n_still_z3"],
-                  "bf_new_z3": b["n_new_z3"], "bf_persist_orig": b["persist_orig"],
+                  "bf_new_z3": b["n_new_z3"], "bf_new_created_z3": b["n_new_created_z3"],
+                  "bf_persist_orig": b["persist_orig"],
                   "bf_persist": b["persist_clean"], "bf_z_clean_med": b["z_clean_med"]})
     m["speech_snr_db"] = fid["speech_snr_db"]
     m["lsd_db"] = ev.log_spectral_distance(x, y, sr)
@@ -232,7 +233,9 @@ def summary_table(rows, split):
             fnum(med([r["contrast_db"] for r in syn])), fnum(med([r["ridge_excess_db"] for r in syn])),
             fnum(100 * med([r["box_hi"] for r in real])),
             (f"{sum(r['bf_still_z3'] for r in bfr)} / {sum(r['bf_z3_orig'] for r in bfr)}; "
-             f"{sum(r['bf_new_z3'] for r in bfr)}") if bfr else "–",
+             f"{sum(r['bf_new_z3'] for r in bfr)}"
+             + (f" ({sum(r['bf_new_created_z3'] for r in bfr)} created)"
+                if all("bf_new_created_z3" in r for r in bfr) else "")) if bfr else "–",
             fnum(100 * med([r["bf_persist"] for r in bfr])),
             fnum(med([r["snr_outside_db"] for r in vis])), fnum(med([r["speech_snr_db"] for r in vis])),
             fnum(med([r["lsd_db"] for r in vis]), 2), fnum(med([r["lsd_above450_db"] for r in vis]), 2),
@@ -302,8 +305,9 @@ def write_md(rows, verdicts):
           "- **box-free ridges** (real clips, no truth needed; `scripts/boxfree.py`): an independent "
           "attacker-side ridge extractor (2 s smoothed view > 4 dB, ≥ 6 s, sweeping ≥ 3 Hz) on the "
           "ORIGINAL; counted are ridges with integrated z > 3 before, those still z > 3 after, and "
-          "z > 3 ridges that appear only after processing (new: mostly leftover harmonics that were part "
-          "of a larger bright component in the original; still + new = z > 3 ridges left). White noise gives 0 ridges. "
+          "z > 3 ridges that appear only after processing (new; in brackets the ones **created** by the processing, the rest being original content "
+          "that was already z>3 or sat inside the original's bright mask: docs/results/new_ridges.md; "
+          "still + new = z > 3 ridges left). White noise gives 0 ridges. "
           "**persistent cells**: share of smoothed cells > 4 dB (white noise 4.6%).",
           "- **event-box ridge cells** (real clips, no true tracks): share of attacker-view cells above "
           "+8 dB inside the annotated event box. Pure noise is about 0.5%.",
