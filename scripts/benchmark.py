@@ -440,11 +440,17 @@ def main(argv=None):
                     help="dev = all clips used for tuning (default); heldout = data/real/heldout "
                          "(burned); heldout2 = data/real/heldout2 (fresh blind set); all = all three")
     ap.add_argument("--md-only", action="store_true")
+    ap.add_argument("--out", default=None,
+                    help="results dir (default docs/results); images go to <out>/img")
     ap.add_argument("--blind", action="store_true", help="print no numbers (judge images first)")
     ap.add_argument("--boxfree-from", default=None,
                     help="add box-free checks to existing real/airshow/heldout rows from cleaned WAVs here")
     ap.add_argument("--workdir", default=None, help="where cleaned WAVs go (default: temp dir)")
     a = ap.parse_args(argv)
+    global RES, IMG
+    if a.out:
+        RES = Path(a.out).resolve()
+        IMG = RES / "img"
 
     IMG.mkdir(parents=True, exist_ok=True)
     jpath = RES / "benchmark.json"

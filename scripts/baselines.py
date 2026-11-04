@@ -361,7 +361,14 @@ def main(argv=None):
     ap.add_argument("--blind", action="store_true", help="print no numbers (judge images first)")
     ap.add_argument("--force", action="store_true", help="recompute cached method outputs")
     ap.add_argument("--md-only", action="store_true")
+    ap.add_argument("--out", default=None,
+                    help="results dir (default docs/results); images go to <out>/img")
     a = ap.parse_args(argv)
+    global RES, IMG
+    if a.out:
+        RES = Path(a.out).resolve()
+        IMG = RES / "img"
+    IMG.mkdir(parents=True, exist_ok=True)
 
     jpath = RES / "baselines.json"
     vpath = RES / "baselines_verdicts.json"
