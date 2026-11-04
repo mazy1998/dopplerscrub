@@ -16,6 +16,7 @@ Usage:
   uv run python scripts/benchmark.py --no-colsto     # skip the 1-hour clip
   uv run python scripts/benchmark.py --md-only
   uv run python scripts/benchmark.py --split heldout --blind   # no numbers on stdout
+  uv run python scripts/benchmark.py --split heldout2 --blind  # fresh blind set (data/real/heldout2)
   uv run python scripts/benchmark.py --boxfree-from .cache/bench_dev  # add box-free checks
 """
 from __future__ import annotations
@@ -250,15 +251,20 @@ def airshow_clips():
 
 
 HELDOUT_DIR = ROOT / "data" / "real" / "heldout"
+HELDOUT2_DIR = ROOT / "data" / "real" / "heldout2"
+# set name -> (directory, clip-name prefix). heldout is burned (results seen during
+# development); heldout2 is the fresh blind set collected afterwards.
+HELDOUT_SETS = {"heldout": (HELDOUT_DIR, "ho_"), "heldout2": (HELDOUT2_DIR, "h2_")}
 
 
-def heldout_clips():
-    """Held-out real clips (never used for tuning). data/real/heldout/annotations.json in
+def heldout_clips(which: str = "heldout"):
+    """Held-out real clips (never used for tuning). <dir>/annotations.json in
     the airshow format ({"clips": [{"name", "path", "events": [{start_s, end_s, fmin_hz,
     fmax_hz}]}]}) if present, else every audio file there (no event boxes)."""
-    if not HELDOUT_DIR.exists():
+    hdir, prefix = HELDOUT_SETS[which]
+    if not hdir.exists():
         return []
-    ann = HELDOUT_DIR / "annotations.json"
+    ann = hdir / "annotations.json"
     out, seen = [], set()
     if ann.exists():
         for c in json.loads(ann.read_text()).get("clips", []):
@@ -267,26 +273,39 @@ def heldout_clips():
                 continue
             boxes = [(e["start_s"], e["end_s"], max(40.0, e["fmin_hz"]), min(AIRSHOW_FMAX, e["fmax_hz"]))
                      for e in c.get("events", [])]
-            out.append({"name": f"ho_{c.get('name', path.stem)}", "path": path, "true": None,
-                        "wide": True, "set": "heldout", "boxes": boxes})
+            out.append({"name": f"{prefix}{c.get('name', path.stem)}", "path": path, "true": None,
+                        "wide": True, "set": which, "boxes": boxes})
             seen.add(path.resolve())
-    for p in sorted(HELDOUT_DIR.iterdir()):
+    for p in sorted(hdir.iterdir()):
         if p.suffix.lower() in (".wav", ".flac", ".mp3", ".m4a", ".mp4", ".mov", ".mkv", ".webm") \
                 and p.resolve() not in seen:
-            out.append({"name": f"ho_{p.stem}", "path": p, "true": None, "wide": True,
-                        "set": "heldout", "boxes": []})
+            out.append({"name": f"{prefix}{p.stem}", "path": p, "true": None, "wide": True,
+                        "set": which, "boxes": []})
     return out
+
+
+# Research scope: fixed-wing airplanes (propeller and jet). Rotorcraft, drones and road
+# vehicles stay listed but are excluded from headline medians/tallies. Synthetic null
+# controls (speech, music, long_hum60, stereo) stay in scope: they test do-no-harm.
+OUT_OF_SCOPE = {"helicopter", "helicopter_wide", "air_helicopter_fast", "air_military_helicopters",
+                "ho_drone", "ho_city_helicopter", "ho_motorcycle"}
+
+
+def in_scope(clip: str) -> bool:
+    """True for fixed-wing clips (and null controls); f1* (cars) and rotorcraft are out."""
+    base = clip.split("_ev")[0] if clip.startswith("colsto") else clip
+    return not (base in OUT_OF_SCOPE or base.startswith("f1"))
 
 
 def clip_split(c) -> str:
     """'dev' = everything used during development/tuning (synth, data/real, airshow, colsto);
-    'heldout' = data/real/heldout only."""
-    return "heldout" if c["set"] == "heldout" else "dev"
+    'heldout' = data/real/heldout only; 'heldout2' = data/real/heldout2 only."""
+    return c["set"] if c["set"] in HELDOUT_SETS else "dev"
 
 
 # ------------------------------------------------------------------ markdown
 
-COLS = ["clip", "split", "set", "detected (doppler/all)", "true", "matched", "residual dB",
+COLS = ["clip", "split", "set", "scope", "detected (doppler/all)", "true", "matched", "residual dB",
         "contrast orig→clean dB", "smoothed clean dB", "SNR outside dB", "speech SNR dB",
         "event-box p99 dB (orig→clean)", "box-free ridges z>3: orig → still (new)", "persistent cells % (orig→clean)", "AF z (orig→clean)", "AF ≤-10 dB?", "AF edge dB", "AF var dB / kurt", "AF leftover k·f",
         "runtime s", "visual verdict"]
@@ -306,8 +325,27 @@ def af_cells(af):
 def bf_cells(b):
     if not b:
         return ["–", "–"]
-    return [f"{b['n_ridges_orig_z3']} → {b['n_still_z3']} ({b['n_new_z3']})",
+    split = (f"; created {b['n_new_created_z3']}, unmasked {b['n_new_unmasked_z3']}, seen {b['n_new_seen_z3']}"
+             if "n_new_created_z3" in b else "; split n/a")
+    return [f"{b['n_ridges_orig_z3']} → {b['n_still_z3']} ({b['n_new_z3']}{split})",
             f"{fnum(100 * b['persist_orig'])} → {fnum(100 * b['persist_clean'])}"]
+
+
+def scope_tally(rows):
+    """Headline box-free tally per split, in-scope (fixed-wing) clips only."""
+    L = ["## Headline (fixed-wing clips only)", "",
+         "Scope is fixed-wing airplanes; clips marked *out of scope* (rotorcraft, drones, cars, "
+         "motorcycles) are listed below but excluded here.", "",
+         "| split | clips with box-free check | ridges z>3 before | still z>3 | new z>3 | of which created |",
+         "|---|---|---|---|---|---|"]
+    for sp in ("dev", *HELDOUT_SETS):
+        bs = [r["boxfree"] for r in rows if r.get("split", "dev") == sp and in_scope(r["clip"]) and r.get("boxfree")]
+        if bs:
+            L.append(f"| {sp} | {len(bs)} | {sum(b['n_ridges_orig_z3'] for b in bs)} | "
+                     f"{sum(b['n_still_z3'] for b in bs)} | {sum(b['n_new_z3'] for b in bs)} | "
+                     + (str(sum(b['n_new_created_z3'] for b in bs)) if all('n_new_created_z3' in b for b in bs)
+                        else "n/a (re-run box-free)") + " |")
+    return L + [""]
 
 
 def write_md(rows, verdicts):
@@ -333,18 +371,22 @@ def write_md(rows, verdicts):
              "`scripts/boxfree.py`): a simple attacker-side ridge extractor (2 s smoothed view > 4 dB, "
              "≥ 6 s, sweeping ≥ 3 Hz) runs on the ORIGINAL 40–450 Hz view; **ridges z>3** = those an "
              "integrating attacker confirms, **still** = how many keep z>3 in the cleaned file, **(new)** = "
-             "z>3 ridges found only in the cleaned file (mostly leftover harmonics that were merged into a "
-             "larger component in the original, rarely artefacts). **persistent cells** = share of smoothed cells "
+             "z>3 ridges found only in the cleaned file, split into **created** (an artefact of the processing), "
+             "**unmasked** (original content inside the original's bright mask, separable once its neighbours "
+             "were removed, power not raised) and **seen** (already z>3 along the same curve in the original); "
+             "see docs/results/new_ridges.md. **persistent cells** = share of smoothed cells "
              "> 4 dB (white noise: 4.6%; 0 ridges).",
              "- **event-box p99**: 99th percentile of whitened dB inside the annotated event boxes "
              "(airshow, colsto); pure noise ≈ 7 dB, so → ~7 means the ridges are gone.",
              "- **visual verdict**: written after viewing each PNG (see `verdicts.json`).", "",
              *([f"_Verdict snapshot: {verdicts['_note']}_", ""] if "_note" in verdicts else []),
+             *scope_tally(rows),
              "| " + " | ".join(COLS) + " |", "|" + "---|" * len(COLS)]
     for r in rows:
         v = verdicts.get(r["clip"], "(not yet reviewed)")
         lines.append("| " + " | ".join([
             f"[{r['clip']}]({r['img_ba']}) ([rt]({r['img_rt']}))", r.get("split", "dev"), r["set"],
+            "fixed-wing" if in_scope(r["clip"]) else "out of scope",
             f"{r['n_doppler']}/{r['n_detected']}", fnum(r["n_true"], 0) if r["n_true"] is not None else "–",
             fnum(r["n_matched"], 0) if r["n_matched"] is not None else "–",
             fnum(r["residual_db"]),
@@ -365,7 +407,7 @@ def write_md(rows, verdicts):
 
 def add_boxfree(rows, workdir, only=None):
     """Box-free checks for rows whose cleaned WAV is in workdir (<clip>_clean.wav)."""
-    allc = {c["name"]: c for c in real_clips() + airshow_clips() + heldout_clips()}
+    allc = {c["name"]: c for c in real_clips() + airshow_clips() + heldout_clips() + heldout_clips("heldout2")}
     for name, c in allc.items():
         if only and name not in only:
             continue
@@ -394,8 +436,9 @@ def main(argv=None):
     ap.add_argument("--no-colsto", action="store_true")
     ap.add_argument("--no-real", action="store_true")
     ap.add_argument("--no-airshow", action="store_true")
-    ap.add_argument("--split", choices=("dev", "heldout", "all"), default="dev",
-                    help="dev = all clips used for tuning (default); heldout = data/real/heldout")
+    ap.add_argument("--split", choices=("dev", "heldout", "heldout2", "all"), default="dev",
+                    help="dev = all clips used for tuning (default); heldout = data/real/heldout "
+                         "(burned); heldout2 = data/real/heldout2 (fresh blind set); all = all three")
     ap.add_argument("--md-only", action="store_true")
     ap.add_argument("--blind", action="store_true", help="print no numbers (judge images first)")
     ap.add_argument("--boxfree-from", default=None,
@@ -409,7 +452,7 @@ def main(argv=None):
     verdicts = json.loads(vpath.read_text()) if vpath.exists() else {}
     prev = {r["clip"]: r for r in json.loads(jpath.read_text())} if jpath.exists() else {}
     for r in prev.values():   # rows from before the split existed were all dev/tuning clips
-        r.setdefault("split", "heldout" if r.get("set") == "heldout" else "dev")
+        r.setdefault("split", r.get("set") if r.get("set") in HELDOUT_SETS else "dev")
     if a.md_only:
         write_md(list(prev.values()), verdicts)
         return
@@ -421,7 +464,8 @@ def main(argv=None):
 
     dev = (synth_clips() + ([] if a.no_real else real_clips(a.no_colsto))
            + ([] if a.no_airshow else airshow_clips()))
-    clips = {"dev": dev, "heldout": heldout_clips(), "all": dev + heldout_clips()}[a.split]
+    clips = {"dev": dev, "heldout": heldout_clips(), "heldout2": heldout_clips("heldout2"),
+             "all": dev + heldout_clips() + heldout_clips("heldout2")}[a.split]
     if a.only:
         clips = [c for c in clips if c["name"] in a.only]
     work = Path(a.workdir or tempfile.mkdtemp(prefix="dsbench_"))
@@ -459,7 +503,7 @@ def main(argv=None):
                              [Track(t.t - w[0], t.f, t.amp, kind=t.kind) for t in loc])
                 r.update(base, **mm); r["runtime_s"] = float("nan")
                 rows[r["clip"]] = r
-        elif c["set"] in ("airshow", "heldout"):
+        elif c["set"] in ("airshow", *HELDOUT_SETS):
             m = metrics(x, y, sr, None, det)
             r = evaluate_clip(c["name"], x, y, sr, None, det, fmax=AIRSHOW_FMAX, boxes=c["boxes"] or None)
             r.update(base, **m); r["boxfree"] = bf.boxfree(x, y, sr); rows[r["clip"]] = r

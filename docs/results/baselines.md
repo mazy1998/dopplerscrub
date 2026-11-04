@@ -6,6 +6,8 @@ All outputs, the original reference included, are quantised to 16-bit PCM, as a 
 
 † Runtimes were measured on a shared CPU while other jobs (benchmark runs, other agents) were running; treat them as rough upper bounds, not as a performance measurement.
 
+**Scope:** fixed-wing airplanes (propeller and jet). Medians below cover in-scope clips only; rotorcraft, drone and road-vehicle clips keep their per-clip sections, marked OUT OF SCOPE.
+
 **Claim under test:** targeted removal hides the Doppler curves as well as blanket methods while damaging far less audio.
 
 ## Verdict
@@ -26,7 +28,7 @@ Clips with a curve visible before cleaning (6): colsto_2050_2250, overlap, prop_
 
 | method | AF z after (synth) ↓ | integrated residual ≤-10 dB (synth, n/N) | exact contrast dB ↓ | tolerant ridge excess dB ↓ | event-box ridge cells % (real) ↓ | box-free ridges still z>3 (Σ still / Σ before; new) ↓ | persistent cells % ↓ | SNR outside dB ↑ | speech SNR dB ↑ | LSD dB ↓ | LSD >450 Hz dB ↓ | STOI-like ↑ | TF modified (all / 40–450 / >450) ↓ | runtime s † |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| **dopplerscrub** | -0.2 | 1/4 | 0.2 | -0.0 | 10.6 | 30 / 49; 17 | 15.1 | 21.6 | 13.4 | 1.15 | 0.93 | 0.933 | 8.4% / 42.8% / 6.6% | 6.6 |
+| **dopplerscrub** | -0.2 | 1/4 | 0.2 | -0.0 | 10.6 | 30 / 49; 17 | 15.1 | 21.6 | 13.4 | 1.15 | 0.93 | 0.933 | 8.4% / 42.8% / 6.6% | 7.1 |
 | **oracle** | -1.8 | 2/4 | -0.2 | -0.1 | – | – | – | 32.2 | 20.4 | 0.54 | 0.04 | 0.970 | 1.7% / 32.6% / 0.1% | 0.5 |
 | **bandstop** | 1.8 | 0/4 | 0.6 | 0.1 | 10.0 | 14 / 49; 4 | 12.0 | 7.7 | 8.6 | 8.74 | 0.33 | 0.686 | 6.2% / 100.0% / 0.9% | 0.1 |
 | **bandstop_brick** | -0.3 | 2/4 | 0.0 | 0.0 | 2.6 | 0 / 49; 3 | 5.4 | 6.9 | 7.5 | 9.81 | 1.58 | 0.638 | 6.1% / 100.0% / 0.7% | 0.1 |
@@ -37,15 +39,15 @@ Clips with a curve visible before cleaning (6): colsto_2050_2250, overlap, prop_
 
 No truth and no boxes: visibility is the box-free check only (`scripts/boxfree.py`) plus the visual verdicts below. SNR outside = whole-signal SNR (nothing to exclude), so it counts removing the target itself as damage. No oracle (no true tracks).
 
-Clips with a curve visible before cleaning (9): ho_ambient_plane, ho_atr72, ho_city_helicopter, ho_crop_duster, ho_dash8, ho_drone, ho_floatplane, ho_motorcycle, ho_phone_plane.
+Clips with a curve visible before cleaning (6): ho_ambient_plane, ho_atr72, ho_crop_duster, ho_dash8, ho_floatplane, ho_phone_plane.
 
 | method | AF z after (synth) ↓ | integrated residual ≤-10 dB (synth, n/N) | exact contrast dB ↓ | tolerant ridge excess dB ↓ | event-box ridge cells % (real) ↓ | box-free ridges still z>3 (Σ still / Σ before; new) ↓ | persistent cells % ↓ | SNR outside dB ↑ | speech SNR dB ↑ | LSD dB ↓ | LSD >450 Hz dB ↓ | STOI-like ↑ | TF modified (all / 40–450 / >450) ↓ | runtime s † |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| **dopplerscrub** | – | – | – | – | – | 50 / 74; 42 | 26.8 | 9.5 | 11.0 | 0.86 | 0.47 | 0.867 | 6.5% / 65.4% / 3.3% | 17.8 |
-| **bandstop** | – | – | – | – | – | 28 / 74; 8 | 17.5 | 3.3 | 7.0 | 5.20 | 0.14 | 0.705 | 10.0% / 100.0% / 1.1% | 0.4 |
-| **bandstop_brick** | – | – | – | – | – | 6 / 74; 24 | 14.4 | 3.0 | 5.9 | 5.71 | 0.30 | 0.646 | 10.0% / 100.0% / 1.1% | 0.3 |
-| **noise** | – | – | – | – | – | 47 / 74; 41 | 10.8 | 6.0 | 8.4 | 2.01 | 0.73 | 0.734 | 12.9% / 98.1% / 4.4% | 0.4 |
-| **jitter** | – | – | – | – | – | 62 / 74; 23 | 31.3 | -2.7 | -2.8 | 3.31 | 3.33 | 0.911 | 98.7% / 96.5% / 99.2% | 0.1 |
+| **dopplerscrub** | – | – | – | – | – | 31 / 51; 36 | 29.1 | 5.3 | 5.6 | 1.39 | 0.96 | 0.783 | 26.4% / 77.8% / 21.0% | 14.0 |
+| **bandstop** | – | – | – | – | – | 20 / 51; 7 | 20.2 | 1.5 | 4.6 | 5.55 | 0.14 | 0.701 | 12.4% / 100.0% / 1.9% | 0.4 |
+| **bandstop_brick** | – | – | – | – | – | 3 / 51; 12 | 9.9 | 1.3 | 3.5 | 6.07 | 0.31 | 0.642 | 12.4% / 100.0% / 1.7% | 0.3 |
+| **noise** | – | – | – | – | – | 32 / 51; 33 | 11.0 | 3.5 | 0.9 | 2.14 | 0.96 | 0.716 | 23.6% / 98.1% / 7.8% | 0.3 |
+| **jitter** | – | – | – | – | – | 43 / 51; 13 | 31.4 | -2.2 | -2.8 | 3.30 | 3.30 | 0.897 | 98.5% / 96.5% / 99.2% | 0.1 |
 
 
 Reference (no processing): exact contrast and ridge excess of the ORIGINAL, median over visible synthetic clips: 3.8 dB / 0.7 dB; AF z 41.3; event-box ridge cells 17.7%.
@@ -55,7 +57,7 @@ Reference (no processing): exact contrast and ridge excess of the ORIGINAL, medi
 - **AF z**: significance of on-curve power over the per-bin floor, integrated over every frame of the TRUE curves (`evaluate.anti_forensics`). z > 3 means an attacker who integrates along the pass detects it. **≤-10 dB** = its 95% upper bound is ≥10 dB under the floor (the research target).
 - **exact contrast**: whitened dB on the true curve minus ±3–6 Hz beside it. A method that *moves* the curve (jitter) scores low here without hiding it, so also read:
 - **tolerant ridge excess**: per frame, the max whitened dB within ±8 Hz of the true curve, minus the same on control curves 24–30 Hz away (`evaluate.ridge_excess_db`). It still sees a wobbled or shifted ridge.
-- **box-free ridges** (real clips, no truth needed; `scripts/boxfree.py`): an independent attacker-side ridge extractor (2 s smoothed view > 4 dB, ≥ 6 s, sweeping ≥ 3 Hz) on the ORIGINAL; counted are ridges with integrated z > 3 before, those still z > 3 after, and z > 3 ridges that appear only after processing (new: mostly leftover harmonics that were part of a larger bright component in the original; still + new = z > 3 ridges left). White noise gives 0 ridges. **persistent cells**: share of smoothed cells > 4 dB (white noise 4.6%).
+- **box-free ridges** (real clips, no truth needed; `scripts/boxfree.py`): an independent attacker-side ridge extractor (2 s smoothed view > 4 dB, ≥ 6 s, sweeping ≥ 3 Hz) on the ORIGINAL; counted are ridges with integrated z > 3 before, those still z > 3 after, and z > 3 ridges that appear only after processing (new; in brackets the ones **created** by the processing, the rest being original content that was already z>3 or sat inside the original's bright mask: docs/results/new_ridges.md; still + new = z > 3 ridges left). White noise gives 0 ridges. **persistent cells**: share of smoothed cells > 4 dB (white noise 4.6%).
 - **event-box ridge cells** (real clips, no true tracks): share of attacker-view cells above +8 dB inside the annotated event box. Pure noise is about 0.5%.
 - **SNR outside**: orig vs orig−processed, excluding ±3 Hz around the true curves (synth) or the event boxes (real). **speech SNR**: 300–3400 Hz. Both are waveform measures, so they also penalise jitter's ms-scale timing changes.
 - **LSD**: log-spectral distance of 46 ms power spectra (80 dB range); **>450 Hz** variant covers the part of the spectrum a band-limited defence should not touch.
@@ -117,7 +119,7 @@ Reference (no processing): exact contrast and ridge excess of the ORIGINAL, medi
 | noise | 2.6 | no | 0.8 | 0.1 | – | – | 2.5 | 1.8 | 2.62 | 0.674 | 7.8% / 99.6% | Mostly hidden (AF z 2.6); speech-band SNR 1.8 dB. |
 | jitter | 8.0 | no | 2.0 | 0.6 | – | – | 0.3 | -2.9 | 6.00 | 0.911 | 99.0% / 96.7% | FAIL: curve visible (AF z 8.0). |
 
-### f1 (synth, dev, curve NOT visible before)
+### f1 (synth, dev, OUT OF SCOPE (not fixed-wing), curve NOT visible before)
 
 ![f1](img/bl_f1.png)
 
@@ -130,7 +132,7 @@ Reference (no processing): exact contrast and ridge excess of the ORIGINAL, medi
 | noise | -0.9 | no | -0.4 | -0.2 | – | – | 1.4 | -2.7 | 2.91 | 0.631 | 8.1% / 99.7% | N/A |
 | jitter | 0.4 | yes | 0.2 | 0.3 | – | – | 2.5 | -2.9 | 5.96 | 0.888 | 99.0% / 96.6% | N/A |
 
-### helicopter (synth, dev, curve NOT visible before)
+### helicopter (synth, dev, OUT OF SCOPE (not fixed-wing), curve NOT visible before)
 
 ![helicopter](img/bl_helicopter.png)
 
@@ -243,7 +245,7 @@ Reference (no processing): exact contrast and ridge excess of the ORIGINAL, medi
 | noise | – | – | – | – | – | 2/2 (6) | 10.1 | 11.1 | 1.99 | 0.729 | 8.8% / 98.1% | Fringe faint but visible. |
 | jitter | – | – | – | – | – | 1/2 (2) | -2.7 | -2.8 | 3.29 | 0.859 | 99.0% / 96.5% | FAIL: unchanged. |
 
-### ho_city_helicopter (heldout, heldout, curve visible before)
+### ho_city_helicopter (heldout, heldout, OUT OF SCOPE (not fixed-wing), curve NOT visible before)
 
 ![ho_city_helicopter](img/bl_ho_city_helicopter.png)
 
@@ -279,7 +281,7 @@ Reference (no processing): exact contrast and ridge excess of the ORIGINAL, medi
 | noise | – | – | – | – | – | 2/8 (4) | 3.1 | -0.3 | 3.41 | 0.598 | 29.8% / 98.7% | Broadband core and the 60-75 s low curve remain. |
 | jitter | – | – | – | – | – | 5/8 (3) | -2.1 | -2.7 | 1.92 | 0.917 | 97.6% / 96.4% | FAIL: unchanged. |
 
-### ho_drone (heldout, heldout, curve visible before)
+### ho_drone (heldout, heldout, OUT OF SCOPE (not fixed-wing), curve NOT visible before)
 
 ![ho_drone](img/bl_ho_drone.png)
 
@@ -303,7 +305,7 @@ Reference (no processing): exact contrast and ridge excess of the ORIGINAL, medi
 | noise | – | – | – | – | – | 5/10 (1) | 3.7 | 2.0 | 2.44 | 0.660 | 12.9% / 98.2% | FAIL: bending harmonics visible at 14-19 s. |
 | jitter | – | – | – | – | – | 9/10 (1) | -2.3 | -2.9 | 3.55 | 0.866 | 98.7% / 95.5% | FAIL: unchanged. |
 
-### ho_motorcycle (heldout, heldout, curve visible before)
+### ho_motorcycle (heldout, heldout, OUT OF SCOPE (not fixed-wing), curve NOT visible before)
 
 ![ho_motorcycle](img/bl_ho_motorcycle.png)
 
